@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI/CD 控制台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+body{background:#0f172a;color:#e2e8f0;min-height:100vh;transition:.3s}
+body.light{background:#f1f5f9;color:#1e293b}
+body.light header,.light .stat-card,.light .project-table,.light .log-panel,.light .modal-content,.light .welcome-card,.light .doctor-card{background:#fff;border-color:#e2e8f0}
+body.light .project-table th{background:#f8fafc;color:#64748b}
+body.light .form-group input,.light .form-group select{background:#fff;color:#1e293b;border-color:#cbd5e1}
+body.light .btn-outline{color:#475569;border-color:#cbd5e1}
+body.light .btn-outline:hover{background:#f1f5f9}
+header{background:#1e293b;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155}
+.header-left{display:flex;align-items:center;gap:12px}.header-left h1{font-size:18px;color:#38bdf8}
+.header-right{display:flex;align-items:center;gap:12px}
+.header-right span{color:#64748b;font-size:13px}
+.theme-btn,#statusText{background:transparent;border:1px solid #475569;color:#e2e8f0;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+body.light .theme-btn{border-color:#cbd5e1;color:#475569}
+.container{max-width:1200px;margin:0 auto;padding:20px 24px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+.stat-card{background:#1e293b;border-radius:10px;padding:16px;text-align:center;border:1px solid #334155}
+.stat-card .num{font-size:28px;font-weight:700}
+.stat-card .label{color:#94a3b8;font-size:12px;margin-top:2px}
+.stat-card:nth-child(1) .num{color:#38bdf8}
+.stat-card:nth-child(2) .num{color:#22c55e}
+.stat-card:nth-child(3) .num{color:#ef4444}
+.stat-card:nth-child(4) .num{color:#f59e0b}
+.stat-card:nth-child(5) .num{color:#a78bfa}
+body.light .stat-card .label{color:#64748b}
+.toolbar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.toolbar button{padding:7px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;transition:.2s}
+.btn-primary{background:#38bdf8;color:#0f172a}.btn-primary:hover{background:#7dd3fc}
+.btn-success{background:#22c55e;color:#fff}.btn-success:hover{background:#4ade80}
+.btn-warning{background:#f59e0b;color:#fff}.btn-warning:hover{background:#fbbf24}
+.btn-danger{background:#ef4444;color:#fff}.btn-danger:hover{background:#f87171}
+.btn-outline{background:transparent;color:#e2e8f0;border:1px solid #475569}.btn-outline:hover{background:#1e293b}
+.project-table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;border:1px solid #334155}
+.project-table th{background:#334155;padding:10px 14px;text-align:left;font-size:12px;color:#94a3b8;font-weight:600}
+.project-table td{padding:10px 14px;border-top:1px solid #334155;font-size:13px}
+.project-table tr:hover{background:#1a2a4a}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500}
+.tag-react{background:#0ea5e9;color:#fff}.tag-vue{background:#22c55e;color:#fff}.tag-maven{background:#a855f7;color:#fff}.tag-node{background:#84cc16;color:#fff}.tag-unknown{background:#64748b;color:#fff}
+.status{display:inline-flex;align-items:center;gap:5px;font-size:12px}
+.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.status-pass{color:#22c55e}.status-pass .status-dot{background:#22c55e}
+.status-fail{color:#ef4444}.status-fail .status-dot{background:#ef4444}
+.status-pending{color:#f59e0b}.status-pending .status-dot{background:#f59e0b}
+.action-btn{padding:3px 10px;border:none;border-radius:5px;cursor:pointer;font-size:11px;margin:0 1px}
+.log-panel{background:#0f172a;border:1px solid #334155;border-radius:10px;margin-top:20px;overflow:hidden}
+.log-panel .log-header{padding:10px 14px;background:#1e293b;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+.log-panel .log-header h3{font-size:13px;color:#94a3b8}
+.log-panel .log-header .log-actions{display:flex;gap:6px}
+.log-panel .log-header button{background:transparent;border:1px solid #475569;color:#94a3b8;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px}
+.log-content{padding:12px 14px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6;max-height:200px;overflow-y:auto;color:#22c55e}
+.log-content .error{color:#ef4444}.log-content .warn{color:#f59e0b}.log-content .info{color:#38bdf8}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);z-index:1000;justify-content:center;align-items:center}
+.modal.active{display:flex}
+.modal-content{background:#1e293b;border-radius:14px;padding:24px;width:540px;max-height:85vh;overflow-y:auto;border:1px solid #334155}
+.modal-content h2{margin-bottom:16px;font-size:17px;color:#38bdf8}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:#94a3b8;margin-bottom:3px}
+.form-group input,.form-group select{width:100%;padding:8px 10px;border:1px solid #475569;border-radius:6px;background:#0f172a;color:#e2e8f0;font-size:13px;outline:none}
+.form-group input:focus,.form-group select:focus{border-color:#38bdf8}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form-section{border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px}
+.form-section h4{font-size:13px;color:#94a3b8;margin-bottom:10px}
+.remote-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.remote-row input{flex:1;padding:6px 8px;border:1px solid #475569;border-radius:4px;background:#0f172a;color:#e2e8f0;font-size:12px}
+.remote-row button{padding:4px 8px;border:none;border-radius:4px;cursor:pointer;font-size:12px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.modal-actions button{padding:7px 20px;border:none;border-radius:6px;cursor:pointer;font-size:13px}
+.welcome-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:32px;text-align:center;margin-bottom:20px}
+.welcome-card h2{font-size:22px;color:#38bdf8;margin-bottom:8px}
+.welcome-card p{color:#94a3b8;font-size:14px;margin-bottom:20px;line-height:1.8}
+.welcome-steps{display:flex;gap:16px;justify-content:center;margin-bottom:24px;flex-wrap:wrap}
+.welcome-step{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;width:200px;text-align:center}
+.welcome-step .step-num{width:28px;height:28px;border-radius:50%;background:#38bdf8;color:#0f172a;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:14px}
+.welcome-step h4{font-size:14px;margin-bottom:4px;color:#e2e8f0}
+.welcome-step p{font-size:12px;color:#64748b;margin:0}
+.doctor-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:14px}
+.doctor-card h3{font-size:14px;color:#38bdf8;margin-bottom:12px}
+.doctor-item{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #334155}
+.doctor-item:last-child{border:none}
+.doctor-item .icon{font-size:16px}.doctor-item .label{color:#94a3b8;min-width:100px}.doctor-item .value{color:#e2e8f0}
+.stepper{display:flex;gap:2px;align-items:center;font-size:11px}
+.step-item{display:flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.step-item.pass{color:#22c55e;background:rgba(34,197,94,.1)}
+.step-item.fail{color:#ef4444;background:rgba(239,68,68,.1)}
+.step-item.running{color:#38bdf8;background:rgba(56,189,248,.1)}
+.step-item.pending{color:#64748b;background:transparent}
+.step-arrow{color:#334155;font-size:10px;margin:0 1px}
+.help-text{font-size:11px;color:#64748b;margin-top:2px;line-height:1.5}
+.help-text code{background:#334155;padding:1px 5px;border-radius:3px;font-size:10px}
+body.light .help-text code{background:#e2e8f0}
+.section-header{display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 0;user-select:none;font-size:14px;color:#e2e8f0}
+.section-header:hover{color:#38bdf8}
+.section-header .arrow{transition:.3s;font-size:12px}
+.section-header .arrow.open{transform:rotate(90deg)}
+.section-body{padding-left:4px}
+.section-body.collapsed{display:none}
+</style>
+</head>
+<body>
+
+<header>
+<div class="header-left"><h1>🔧 CI/CD 控制台</h1></div>
+<div class="header-right">
+  <span id="statusText">就绪</span>
+  <button class="theme-btn" onclick="showPasswordDialog()">🔑 修改密码</button>
+  <button class="theme-btn" onclick="toggleTheme()">🌓 主题</button>
+</div>
+</header>
+
+<div class="container" id="mainContainer">
+  <div class="welcome-card" id="welcomeCard" style="display:none">
+    <h2>👋 欢迎使用 CI/CD 控制台</h2>
+    <p>检测到还没有配置任何项目。<br>接下来只需要 3 步：</p>
+    <div class="welcome-steps">
+      <div class="welcome-step"><div class="step-num">1</div><h4>添加项目</h4><p>点击下方 [+ 添加项目] 按钮，选择项目目录</p></div>
+      <div class="welcome-step"><div class="step-num">2</div><h4>配置部署（可选）</h4><p>填写服务器地址和远程路径</p></div>
+      <div class="welcome-step"><div class="step-num">3</div><h4>开始使用</h4><p>点击 [检查] [构建] [部署] 运行流水线</p></div>
+    </div>
+    <button class="btn-primary" onclick="showAddDialog()" style="font-size:15px;padding:10px 28px">开始配置</button>
+  </div>
+
+  <div class="doctor-card" id="doctorCard" style="display:none"></div>
+
+  <div class="stats" id="stats">
+    <div class="stat-card"><div class="num" id="totalCount">-</div><div class="label">项目</div></div>
+    <div class="stat-card"><div class="num" id="passCount">-</div><div class="label">通过</div></div>
+    <div class="stat-card"><div class="num" id="failCount">-</div><div class="label">失败</div></div>
+    <div class="stat-card"><div class="num" id="deployCount">-</div><div class="label">已部署</div></div>
+    <div class="stat-card"><div class="num" id="remoteCount">-</div><div class="label">远程仓库</div></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn-primary" onclick="runPipelineAll()">⏯ 运行流水线</button>
+    <button class="btn-primary" onclick="batchRun('check')">🔍 检查全部</button>
+    <button class="btn-success" onclick="batchRun('build')">🔨 构建全部</button>
+    <button class="btn-warning" onclick="batchRun('test')">🧪 测试全部</button>
+    <button class="btn-warning" onclick="batchRun('push')">📤 推送全部</button>
+    <button class="btn-danger" onclick="batchRun('deploy')">🚀 部署全部</button>
+    <button class="btn-outline" onclick="showAddDialog()">+ 添加项目</button>
+    <button class="btn-outline" onclick="runDoctor()">🏥 环境诊断</button>
+    <button class="btn-outline" onclick="refreshProjects()">🔄 刷新</button>
+    <button class="btn-outline" id="autoToggle" onclick="toggleAutoPipeline()" style="border-color:#475569;color:#e2e8f0;font-size:12px">🌐 自动:OFF</button>
+  </div>
+
+  <table class="project-table" id="projectTable">
+    <thead><tr><th>项目</th><th>类型</th><th>版本</th><th>分支/提交</th><th>状态</th><th>配置</th><th>进度</th><th style="width:480px">操作</th></tr></thead>
+    <tbody id="projectBody"></tbody>
+  </table>
+
+  <div class="log-panel">
+    <div class="log-header">
+      <h3>📋 运行日志</h3>
+      <div class="log-actions">
+        <button onclick="clearLog()">清空</button>
+      </div>
+    </div>
+    <div class="log-content" id="logContent">等待操作...</div>
+  </div>
+</div>
+
+<!-- 项目编辑弹窗 -->
+<div class="modal" id="projectModal">
+  <div class="modal-content">
+    <h2 id="modalTitle">添加项目</h2>
+    <div class="form-group"><label>项目名称</label><input id="inputName" placeholder="pair-front"></div>
+    <div class="form-group"><label>项目路径</label><input id="inputPath" placeholder="D:\Idea\project\pair"></div>
+
+    <div class="section-header" onclick="toggleSection('deploy')">
+      <span class="arrow" id="deployArrow">▶</span> 🚀 部署配置
+    </div>
+    <div class="section-body collapsed" id="deploySection">
+      <div class="help-text">部署 = 将构建产物通过 SFTP 上传到远程服务器并启动服务。</div>
+      <div class="form-group" style="margin-top:10px"><label>部署目标</label>
+        <select id="inputTarget"><option value="production">production（生产环境）</option><option value="staging">staging（测试环境）</option></select>
+      </div>
+      <div class="form-group"><label>主机</label><input id="inputHost" placeholder="例: 192.168.1.10"></div>
+      <div class="form-row">
+        <div class="form-group"><label>端口</label><input id="inputPort" value="22"></div>
+        <div class="form-group"><label>用户名</label><input id="inputUser" placeholder="例: deploy"></div>
+      </div>
+      <div class="form-group"><label>认证方式</label>
+        <select id="inputAuthType" onchange="toggleKeyPath()">
+          <option value="key" selected>SSH 密钥（推荐）</option>
+          <option value="agent">SSH Agent</option>
+          <option value="password">密码</option>
+        </select>
+      </div>
+      <div class="form-group" id="keyPathGroup"><label>密钥路径</label><input id="inputKeyPath" placeholder="C:\Users\xxx\.ssh\id_ed25519"></div>
+      <div class="form-group"><label>远程路径</label><input id="inputRemote" placeholder="/opt/pair-front"></div>
+      <div style="display:flex;gap:8px;margin:8px 0">
+        <button class="btn-outline" onclick="testConnection()" style="font-size:12px;padding:6px 16px">🔌 测试连接</button>
+        <span id="testResult" style="font-size:12px;display:flex;align-items:center"></span>
+      </div>
+    </div>
+
+    <div class="section-header" onclick="toggleSection('git')">
+      <span class="arrow" id="gitArrow">▶</span> 📤 Git 远程仓库
+    </div>
+    <div class="section-body collapsed" id="gitSection">
+      <div class="help-text">同时推送到多个远程仓库，如 GitHub + Gitee。</div>
+      <div id="remoteList" style="margin-top:8px"></div>
+      <button class="btn-outline" style="font-size:12px;padding:4px 12px;margin-top:6px" onclick="addRemoteRow()">+ 添加远程</button>
+    </div>
+
+    <div class="section-header" onclick="toggleSection('rules')">
+      <span class="arrow" id="rulesArrow">▶</span> 🔍 代码检查规则
+    </div>
+    <div class="section-body collapsed" id="rulesSection">
+      <div id="rulesList" style="margin-top:8px"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn-primary" onclick="saveProject()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 测试报告弹窗 -->
+<div class="modal" id="reportModal"></div>
+
+<!-- 修改密码弹窗 -->
+<div class="modal" id="passwordModal">
+  <div class="modal-content" style="width:400px">
+    <h2>🔑 修改密码</h2>
+    <div class="form-group"><label>当前密码</label><input type="password" id="inputOldPass" placeholder="输入当前密码"></div>
+    <div class="form-group"><label>新密码</label><input type="password" id="inputNewPass" placeholder="不少于 6 位"></div>
+    <div class="form-group"><label>确认新密码</label><input type="password" id="inputConfirmPass" placeholder="再次输入新密码"></div>
+    <div id="passwordMsg" style="font-size:13px;margin-bottom:10px"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closePasswordDialog()">取消</button>
+      <button class="btn-primary" onclick="changePassword()">确认修改</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let projects = [];
+let remoteCount = 0;
+let autoPipeline = false;
+const stepIcons = {pass:'✅',fail:'❌',running:'⏳',pending:'⚪'};
+const stepOrder = ['check','build','test','push','deploy'];
+const stepLabels = {check:'检查',build:'构建',test:'测试',push:'推送',deploy:'部署'};
+function getNextStep(current) {
+  const idx = stepOrder.indexOf(current);
+  if (idx < 0 || idx >= stepOrder.length - 1) return null;
+  return stepOrder[idx + 1];
+}
+function toggleAutoPipeline() {
+  autoPipeline = !autoPipeline;
+  document.getElementById('autoToggle').textContent = autoPipeline ? '🌐 自动:ON' : '🌐 自动:OFF';
+  document.getElementById('autoToggle').style.borderColor = autoPipeline ? '#22c55e' : '#475569';
+  document.getElementById('autoToggle').style.color = autoPipeline ? '#22c55e' : '#e2e8f0';
+  log(`🌐 自动流水线: ${autoPipeline ? '已开启' : '已关闭'}`, 'info');
+}
+if (!window._stepStatus) window._stepStatus = {};
+const ruleDefs = {
+  React:   [{id:'tsc', label:'TypeScript 类型检查', file:'tsc --noEmit', def:true}],
+  Vue:     [{id:'tsc', label:'vue-tsc 类型检查', file:'vue-tsc --noEmit', def:true},
+            {id:'eslint', label:'ESLint 代码规范', file:'rules/eslint-vue.mjs', def:true}],
+  Maven:   [{id:'compile', label:'编译检查 -Xlint', file:'mvn compile', def:true},
+            {id:'checkstyle', label:'Checkstyle 代码风格', file:'rules/checkstyle.xml', def:true}],
+  MavenMulti:[{id:'compile', label:'多模块编译检查', file:'mvn compile', def:true}],
+};
+
+function stepKey(p,s){return (p.name||p)+':'+s}
+function getStep(p,s){return window._stepStatus[stepKey(p,s)]||'pending'}
+function setStep(p,s,v){window._stepStatus[stepKey(p,s)]=v}
+
+function renderStepper(p) {
+  return stepOrder.map(s => {
+    const st = getStep(p, s);
+    return `<span class="step-item ${st}">${stepIcons[st]} ${stepLabels[s]}</span>`;
+  }).join('<span class="step-arrow">→</span>');
+}
+
+function renderRules(path) {
+  const el = document.getElementById('rulesList');
+  let type = 'Unknown';
+  const matched = projects.find(p => p.path === path);
+  if (matched && matched.type) type = matched.type;
+  const rules = ruleDefs[type] || ruleDefs['Maven'];
+  if (!rules || rules.length === 0) { el.innerHTML = '<div class="help-text">无适用规则</div>'; return; }
+  el.innerHTML = rules.map(r => {
+    const checked = r.def ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="rule-cb" data-id="${r.id}" ${checked}>
+      <span>${r.label}</span>
+      <span style="color:#64748b;font-size:11px">(${r.file})</span>
+    </label>`;
+  }).join('');
+}
+
+function log(msg, type) {
+  const el = document.getElementById('logContent');
+  const cls = type === 'error' ? 'error' : type === 'warn' ? 'warn' : type === 'info' ? 'info' : '';
+  if (el.innerHTML === '等待操作...') el.innerHTML = '';
+  el.innerHTML += `<div class="${cls}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function toggleSection(name) {
+  const body = document.getElementById(name + 'Section');
+  const arrow = document.getElementById(name + 'Arrow');
+  if (!body || !arrow) return;
+  body.classList.toggle('collapsed');
+  arrow.classList.toggle('open');
+}
+function clearLog() { document.getElementById('logContent').innerHTML = '等待操作...'; }
+
+function toggleTheme() {
+  document.body.classList.toggle('light');
+  localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+}
+if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+
+async function api(path) {
+  try {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error(r.statusText);
+    return await r.json();
+  } catch(e) { log(`❌ API 错误: ${e.message}`, 'error'); return null; }
+}
+
+async function apiPost(path, body) {
+  try {
+    const r = await fetch(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    return await r.json();
+  } catch(e) { log(`❌ API 错误: ${e.message}`, 'error'); return null; }
+}
+
+// ===== 修改密码 =====
+function showPasswordDialog() {
+  document.getElementById('inputOldPass').value = '';
+  document.getElementById('inputNewPass').value = '';
+  document.getElementById('inputConfirmPass').value = '';
+  document.getElementById('passwordMsg').textContent = '';
+  document.getElementById('passwordModal').classList.add('active');
+}
+function closePasswordDialog() {
+  document.getElementById('passwordModal').classList.remove('active');
+}
+async function changePassword() {
+  const oldPass = document.getElementById('inputOldPass').value;
+  const newPass = document.getElementById('inputNewPass').value;
+  const confirmPass = document.getElementById('inputConfirmPass').value;
+  const msgEl = document.getElementById('passwordMsg');
+
+  if (!oldPass || !newPass) { msgEl.innerHTML = '<span style="color:#ef4444">请填写完整</span>'; return; }
+  if (newPass.length < 6) { msgEl.innerHTML = '<span style="color:#ef4444">新密码不能少于 6 位</span>'; return; }
+  if (newPass !== confirmPass) { msgEl.innerHTML = '<span style="color:#ef4444">两次密码不一致</span>'; return; }
+
+  const data = await apiPost('/api/auth/change-password', {old_password: oldPass, new_password: newPass});
+  if (data && data.status === 'ok') {
+    msgEl.innerHTML = '<span style="color:#22c55e">✅ 密码修改成功</span>';
+    setTimeout(closePasswordDialog, 1500);
+    log('🔑 密码已修改', 'info');
+  } else {
+    msgEl.innerHTML = `<span style="color:#ef4444">❌ ${data?.error || '修改失败'}</span>`;
+  }
+}
+
+// ===== 环境诊断 =====
+async function runDoctor() {
+  log('🔍 开始环境诊断...', 'info');
+  let incompleteCount = 0;
+  projects.forEach(p => { if (!p.deploy || !p.deploy.host) { incompleteCount++; } });
+  if (incompleteCount > 0) log(`⚠ ${incompleteCount} 个项目缺少部署配置`, 'warn');
+  const html = [`<h3>🏥 环境诊断</h3>
+    <div class="doctor-item"><span class="icon">${projects.length > 0 ? '✅' : '⚠️'}</span><span class="label">项目配置</span><span class="value">${projects.length} 个项目</span></div>
+    <div class="doctor-item"><span class="icon">${incompleteCount === 0 ? '✅' : '⚠️'}</span><span class="label">部署配置</span><span class="value">${projects.length - incompleteCount} 个完整, ${incompleteCount} 个未配置</span></div>
+    <div class="doctor-item"><span class="icon">${navigator.onLine ? '✅' : '❌'}</span><span class="label">网络连接</span><span class="value">${navigator.onLine ? '在线' : '离线'}</span></div>
+  `];
+  if (incompleteCount > 0) {
+    html.push(`<div style="margin-top:10px;padding:10px;background:#0f172a;border-radius:8px;font-size:13px">
+      <strong style="color:#f59e0b">💡 建议:</strong>
+      <ul style="margin:8px 0 0 16px;color:#94a3b8">
+        <li>编辑缺少部署配置的项目，填写服务器信息</li>
+        <li>或执行 <code style="background:#334155;padding:1px 6px;border-radius:4px">ci init deploy &lt;项目名&gt;</code></li>
+      </ul>
+    </div>`);
+  }
+  document.getElementById('doctorCard').innerHTML = html.join('');
+  document.getElementById('doctorCard').style.display = 'block';
+  setTimeout(() => { document.getElementById('doctorCard').style.display = 'none'; }, 15000);
+  log('✅ 环境诊断完成', 'info');
+}
+
+// ===== 项目管理 =====
+async function refreshProjects() {
+  const data = await api('/api/projects');
+  projects = data?.projects || [];
+  const welcome = document.getElementById('welcomeCard');
+  welcome.style.display = projects.length === 0 ? 'block' : 'none';
+  remoteCount = 0;
+  projects.forEach(p => { if (p.remotes) remoteCount += p.remotes.filter(r => r.enabled !== false).length; });
+  renderProjects();
+}
+
+function renderProjects() {
+  const tbody = document.getElementById('projectBody');
+  let pass = 0, fail = 0, deployed = 0;
+  tbody.innerHTML = '';
+  projects.forEach(p => {
+    const s = p.status || 'pending';
+    if (s === 'pass') pass++; else if (s === 'fail') fail++;
+    if (p.deploy?.host) deployed++;
+    const tt = (p.type||'unknown').toLowerCase();
+    const configWarn = (!p.deploy || !p.deploy.host) ? '<span style="color:#f59e0b;font-size:11px">⚠ 未配置部署</span>' : '<span style="color:#22c55e;font-size:11px">✅ 已配置</span>';
+
+    document.getElementById('totalCount').textContent = projects.length;
+    document.getElementById('passCount').textContent = pass;
+    document.getElementById('failCount').textContent = fail;
+    document.getElementById('deployCount').textContent = deployed;
+    document.getElementById('remoteCount').textContent = remoteCount;
+
+    tbody.innerHTML += `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td><span class="tag tag-${tt}">${p.type||'未知'}</span></td>
+      <td style="font-size:12px">${p.version || '-'}</td>
+      <td style="font-size:11px;color:#94a3b8">${p.git_branch || '-'}${p.git_commit ? '<br><code style="font-size:10px;background:#334155;padding:1px 4px;border-radius:3px">'+p.git_commit.substring(0,7)+'</code>' : ''}</td>
+      <td><span class="status status-${s}"><span class="status-dot"></span>${s === 'pass' ? '通过' : s === 'fail' ? '失败' : '等待'}</span></td>
+      <td>
+        ${configWarn}
+        ${p.remotes && p.remotes.length > 0 ? '<span style="color:#a78bfa;font-size:11px">📤 ' + p.remotes.filter(r=>r.enabled!==false).map(r=>r.name).join(', ') + '</span>' : '<span style="color:#64748b;font-size:11px">无远程仓库</span>'}
+      </td>
+      <td><div class="stepper">${renderStepper(p)}</div></td>
+      <td>
+        <button class="action-btn btn-primary" onclick="runAction('check','${p.name}')">检查</button>
+        <button class="action-btn btn-success" onclick="runAction('build','${p.name}')">构建</button>
+        <button class="action-btn btn-warning" onclick="runAction('test','${p.name}')">测试</button>
+        <button class="action-btn btn-warning" onclick="runAction('push','${p.name}')">推送</button>
+        <button class="action-btn btn-danger" onclick="runDeploy('${p.name}')">部署</button>
+        <button class="action-btn btn-outline" onclick="editProject('${p.name}')">编辑</button>
+        <button class="action-btn btn-outline" onclick="showReport('${p.name}')" style="font-size:10px">📊 报告</button>
+        <button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>
+      </td>
+    </tr>`;
+  });
+}
+
+// ===== 操作执行 =====
+async function runAction(action, project) {
+  const p = projects.find(x => x.name === project);
+  const start = Date.now();
+
+  setStep(p, action, 'running');
+  renderProjects();
+
+  if (action === 'deploy') {
+    if (!p || !p.deploy || !p.deploy.host) {
+      log(`❌ [${project}] 未配置部署信息，请先编辑项目`, 'error');
+      log(`💡 点击 [编辑] 填写主机地址和远程路径`, 'info');
+      setStep(p, action, 'pending');
+      return;
+    }
+  }
+
+  log(`[${project}] ${action}...`);
+  document.getElementById('statusText').textContent = `${action} ${project}...`;
+  const data = await api(`/api/${action}?project=${encodeURIComponent(project)}`);
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  if (data && data.status === 'pass') {
+    setStep(p, action, 'pass');
+    log(`✅ [${project}] ${action} 通过 (${elapsed}s)`, 'info');
+
+    if (action === 'test') {
+      await new Promise(r => setTimeout(r, 100));
+      showReport(project, data);
+    }
+
+    if (autoPipeline) {
+      const next = getNextStep(action);
+      if (next) {
+        log(`🔄 自动流水线: ${stepLabels[action]} ✅ → 继续 ${stepLabels[next]}...`, 'info');
+        await new Promise(r => setTimeout(r, 200));
+        await runAction(next, project);
+      } else {
+        log(`🎉 [${project}] 流水线全部完成！`, 'info');
+      }
+    }
+  } else if (data) {
+    setStep(p, action, 'fail');
+    log(`❌ [${project}] ${action} 失败 (${elapsed}s)`, 'error');
+    if (autoPipeline) {
+      log(`⏹ 自动流水线: ${stepLabels[action]} 失败，流水线终止`, 'warn');
+    }
+    if (action === 'check') {
+      log(`📋 错误详情: 请查看上方输出`, 'error');
+      log(`💡 修复建议:`, 'warn');
+      log(`   1. 根据错误信息修改对应文件`, 'warn');
+      log(`   2. 修改后重新执行: ci check ${project}`, 'warn');
+    }
+    if (action === 'deploy') {
+      log(`📋 诊断信息:`, 'warn');
+      log(`   Step 1: ping → 检查服务器是否在线`, 'warn');
+      log(`   Step 2: DNS → 检查主机名解析`, 'warn');
+      log(`   Step 3: SSH → 检查端口和认证`, 'warn');
+      log(`💡 可能原因:`, 'warn');
+      log(`   1. 目标服务器未开机`, 'warn');
+      log(`   2. SSH 服务未启动`, 'warn');
+      log(`   3. 认证方式不匹配（推荐使用 SSH 密钥）`, 'warn');
+    }
+  }
+  document.getElementById('statusText').textContent = '就绪';
+  refreshProjects();
+}
+
+function runDeploy(project) {
+  const p = projects.find(x => x.name === project);
+  if (!p) return;
+  if (!p.deploy || !p.deploy.host) {
+    log(`❌ [${project}] 未配置部署信息`, 'error');
+    log(`💡 请点击 [编辑] 填写部署配置`, 'info');
+    return;
+  }
+  runAction('deploy', project);
+}
+
+async function batchRun(action) {
+  log(`🔄 批量 ${action}...`, 'info');
+  for (const p of projects) await runAction(action, p.name);
+  log(`✅ 批量 ${action} 完成`, 'info');
+}
+
+async function runPipelineAll() {
+  log('⏯ 开始全链路流水线...', 'info');
+  for (const p of projects) {
+    log(`🔷 [${p.name}] 开始流水线`, 'info');
+    await runAction('check', p.name);
+  }
+  log('✅ 全链路流水线执行完毕', 'info');
+}
+
+async function runSinglePipeline(project) {
+  log(`▶️ 开始流水线: ${project}`, 'info');
+  await runAction('check', project);
+  log(`✅ 流水线完成: ${project}`, 'info');
+}
+
+// ===== 项目编辑弹窗 =====
+function showAddDialog() {
+  document.getElementById('modalTitle').textContent = '添加项目';
+  ['inputName','inputPath','inputHost','inputPort','inputUser','inputRemote','inputKeyPath'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('inputPort').value = '22';
+  document.getElementById('inputTarget').value = 'production';
+  document.getElementById('inputAuthType').value = 'key';
+  document.getElementById('remoteList').innerHTML = '';
+  document.getElementById('testResult').textContent = '';
+  toggleKeyPath();
+  document.getElementById('projectModal').classList.add('active');
+}
+
+function toggleKeyPath() {
+  const v = document.getElementById('inputAuthType').value;
+  document.getElementById('keyPathGroup').style.display = v === 'key' ? 'block' : 'none';
+}
+
+function editProject(name) {
+  const p = projects.find(x => x.name === name); if (!p) return;
+  document.getElementById('modalTitle').textContent = `编辑: ${name}`;
+  document.getElementById('inputName').value = p.name;
+  document.getElementById('inputPath').value = p.path || '';
+  document.getElementById('inputTarget').value = p.deployTarget || 'production';
+  document.getElementById('inputHost').value = p.deploy?.host || '';
+  document.getElementById('inputPort').value = p.deploy?.port || '22';
+  document.getElementById('inputUser').value = p.deploy?.user || '';
+  document.getElementById('inputAuthType').value = p.deploy?.auth_type || 'key';
+  document.getElementById('inputKeyPath').value = p.deploy?.identity_file || '';
+  document.getElementById('inputRemote').value = p.deploy?.remote_dir || '';
+  document.getElementById('remoteList').innerHTML = '';
+  document.getElementById('testResult').textContent = '';
+  toggleKeyPath();
+  if (p.remotes) p.remotes.forEach(r => addRemoteRow(r.name, r.url, r.enabled));
+  renderRules(p.path);
+  ['deploy','git','rules'].forEach(s => {
+    const body = document.getElementById(s+'Section');
+    const arrow = document.getElementById(s+'Arrow');
+    if (body) body.classList.remove('collapsed');
+    if (arrow) arrow.classList.add('open');
+  });
+  document.getElementById('projectModal').classList.add('active');
+}
+
+function testConnection() {
+  const host = document.getElementById('inputHost').value;
+  const port = document.getElementById('inputPort').value;
+  const user = document.getElementById('inputUser').value;
+  const auth = document.getElementById('inputAuthType').value;
+  const key = document.getElementById('inputKeyPath').value;
+  const el = document.getElementById('testResult');
+  if (!host || !user) { el.textContent = '❌ 请填写主机和用户名'; return; }
+  el.textContent = '⏳ 测试中...';
+  const params = new URLSearchParams({ host, port, user, auth_type: auth, identity_file: key });
+  fetch(`/api/deploy/test?${params}`).then(r => r.json()).then(data => { el.textContent = data.status === 'ok' ? '✅ 连接成功' : '❌ 连接失败'; }).catch(() => { el.textContent = '❌ 连接失败'; });
+}
+
+function closeModal() { document.getElementById('projectModal').classList.remove('active'); }
+
+function addRemoteRow(name, url, enabled) {
+  const rl = document.getElementById('remoteList');
+  const div = document.createElement('div'); div.className = 'remote-row';
+  div.innerHTML = `<input class="remote-name" placeholder="名称 (github)" value="${name||''}"><input class="remote-url" placeholder="URL" value="${url||''}" style="flex:2"><label style="font-size:12px;color:#94a3b8;white-space:nowrap"><input type="checkbox" class="remote-enabled" ${enabled !== false ? 'checked' : ''}> 启用</label><button class="btn-danger" style="padding:4px 8px;font-size:12px" onclick="this.parentElement.remove()">✕</button>`;
+  rl.appendChild(div);
+}
+
+async function saveProject() {
+  const remotes = [];
+  document.querySelectorAll('#remoteList .remote-row').forEach(row => {
+    const name = row.querySelector('.remote-name').value;
+    const url = row.querySelector('.remote-url').value;
+    if (name && url) remotes.push({ name, url, enabled: row.querySelector('.remote-enabled').checked });
+  });
+  const p = {
+    name: document.getElementById('inputName').value,
+    path: document.getElementById('inputPath').value,
+    enabled: true,
+    deployTarget: document.getElementById('inputTarget').value,
+    deploy: {
+      host: document.getElementById('inputHost').value,
+      port: parseInt(document.getElementById('inputPort').value) || 22,
+      user: document.getElementById('inputUser').value,
+      auth_type: document.getElementById('inputAuthType').value,
+      identity_file: document.getElementById('inputKeyPath').value,
+      remote_dir: document.getElementById('inputRemote').value,
+    },
+    remotes: remotes
+  };
+  const rules = [];
+  document.querySelectorAll('.rule-cb').forEach(cb => { rules.push({ id: cb.dataset.id, enabled: cb.checked }); });
+  p.rules = rules;
+  if (!p.name || !p.path) { log('❌ 请填写项目名称和路径', 'error'); return; }
+  const idx = projects.findIndex(x => x.name === p.name);
+  if (idx >= 0) projects[idx] = p;
+  else projects.push(p);
+  try {
+    await apiPost('/api/project', {projects});
+    log(`✅ 项目已保存: ${p.name}`, 'info');
+  } catch(e) { log(`❌ 保存失败: ${e.message}`, 'error'); }
+  closeModal();
+  renderProjects();
+}
+
+// ===== 测试报告弹窗 =====
+async function showReport(project, data) {
+  const p = projects.find(x => x.name === project);
+  if (!p) return;
+
+  if (data && data.report) {
+    if (data.report.total !== undefined) {
+      data = { duration: data.duration, report: data.report };
+    } else if (data.report.report) {
+      data = { duration: data.report.duration, report: data.report.report };
+    }
+  }
+
+  if (!data || !data.report) {
+    data = await api(`/api/report/latest?project=${encodeURIComponent(project)}`);
+    if (data && data.report && data.report.report) {
+      data = { duration: data.report.duration, report: data.report.report };
+    }
+  }
+
+  const rep = data?.report;
+  if (!rep) { log(`📭 [${project}] 无测试报告`, 'warn'); return; }
+
+  const total = rep.total || 0;
+  const passed = rep.passed || 0;
+  const failed = rep.failed || 0;
+  const skipped = rep.skipped || 0;
+  const coverage = rep.coverage || '-';
+  const failures = rep.failures || [];
+
+  // 同时获取历史列表
+  const listData = await api(`/api/report/list?project=${encodeURIComponent(project)}`);
+  const reports = listData?.reports || [];
+
+  let html = `<div class="modal-content" style="width:680px">
+    <h2>🧪 测试报告: ${project}</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+      <div class="stat-card"><div class="num" style="color:#38bdf8">${total}</div><div class="label">总数</div></div>
+      <div class="stat-card"><div class="num" style="color:#22c55e">${passed}</div><div class="label">通过</div></div>
+      <div class="stat-card"><div class="num" style="color:#ef4444">${failed}</div><div class="label">失败</div></div>
+      <div class="stat-card"><div class="num" style="color:#f59e0b">${skipped}</div><div class="label">跳过</div></div>
+    </div>
+    <div style="margin-bottom:12px">
+      <span style="color:#94a3b8;font-size:13px">覆盖率: </span>
+      <span style="color:#a78bfa;font-size:18px;font-weight:700">${coverage}</span>
+      <span style="color:#94a3b8;font-size:13px;margin-left:20px">耗时: </span>
+      <span style="color:#e2e8f0;font-size:15px">${data.duration || '-'}</span>
+    </div>`;
+
+  if (failures.length > 0) {
+    html += `<div style="margin-bottom:12px">
+      <h3 style="color:#ef4444;font-size:14px;margin-bottom:8px">❌ 失败详情 (${failures.length} 个)</h3>`;
+    failures.forEach(f => {
+      html += `<div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:10px;margin-bottom:6px">
+        <div style="color:#f87171;font-size:13px;font-weight:600">[${f.suite}] ${f.test}</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:4px;font-family:monospace;white-space:pre-wrap">${f.message}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // 历史报告列表
+  if (reports.length > 0) {
+    html += `<div style="margin-top:14px;border-top:1px solid #334155;padding-top:12px">
+      <h3 style="color:#94a3b8;font-size:13px;margin-bottom:8px">📋 历史报告 (${reports.length})</h3>
+      <div style="max-height:180px;overflow-y:auto">`;
+    reports.forEach(r => {
+      const st = r.status === 'pass' ? '✅' : '❌';
+      const info = r.total ? `${r.passed}/${r.total} 通过` : '-';
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid #1e293b;font-size:12px">
+        <span>${st}</span>
+        <span style="color:#94a3b8;flex:1">${r.timestamp || r.id}</span>
+        <span style="color:#e2e8f0;width:80px">${info}</span>
+        <button class="action-btn btn-outline" style="font-size:10px" onclick="showReportById('${project}','${r.id}')">查看</button>
+        <button class="action-btn btn-danger" style="font-size:10px" onclick="deleteReport('${project}','${r.id}')">删除</button>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  html += `<div style="margin-top:12px;text-align:right">
+    <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="padding:7px 20px">关闭</button>
+  </div></div>`;
+
+  const modal = document.getElementById('reportModal');
+  modal.innerHTML = html;
+  modal.classList.add('active');
+}
+
+async function showReportById(project, id) {
+  const data = await api(`/api/report/latest?project=${encodeURIComponent(project)}`);
+  const listData = await api(`/api/report/list?project=${encodeURIComponent(project)}`);
+  const reports = listData?.reports || [];
+  const reportInfo = reports.find(r => r.id === id);
+  if (!reportInfo) { log(`📭 未找到该报告`, 'warn'); return; }
+  // 从磁盘读取指定报告
+  const r = await fetch(`/api/report/latest?project=${encodeURIComponent(project)}&id=${id}`);
+  // 回退：直接显示所有报告，让用户看到列表
+  showReport(project);
+}
+
+async function deleteReport(project, id) {
+  if (!confirm(`确定删除 ${id} 的测试报告？`)) return;
+  const data = await apiPost('/api/report/delete', {project, id});
+  if (data && data.status === 'ok') {
+    log(`🗑️ 已删除报告: ${id}`, 'info');
+    showReport(project);
+  } else {
+    log(`❌ 删除失败: ${data?.error || '未知错误'}`, 'error');
+  }
+}
+
+refreshProjects();
+</script>
+</body>
+</html>
