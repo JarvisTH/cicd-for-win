@@ -1,6 +1,6 @@
 # 本地 CI/CD 流水线完整方案
 
-> 最后更新：2026-06-19  
+> 最后更新：2026-06-20（安全加固完成：服务器密码 AES-GCM 加密存储+自动迁移、SSH known_hosts TOFU 校验、CSRF 防护、下载 token 机制、并发锁、原子写入、路径穿越校验、SSH 连接回收；前端拆分为 index.html/app.css/app.js；按钮布局分组重构；补全 download-token 等 31 个 API 路由文档）  
 > 设计目标：纯自建、零外部依赖、可视化操作、通用可扩展、AI Agent 友好
 
 ---
@@ -20,7 +20,8 @@
 │  │                                                          │  │
 │  │  ┌─ cmd/ ─────────────────────────────────────────────┐  │  │
 │  │  │  main.go        ← Cobra 根命令，注册所有子命令        │  │  │
-│  │  │  commands.go    ← 15 个子命令定义                    │  │  │
+│  │  │  commands.go    ← CLI 子命令定义（含远程管理/日志/服务器命令）│  │  │
+│  │  │  remote_commands.go ← 远程管理/日志/服务器 CLI 命令实现    │  │  │
 │  │  │  serve.go       ← ci serve（内嵌 Web 服务器）        │  │  │
 │  │  └────────────────────────────────────────────────────┘  │  │
 │  │                                                          │  │
@@ -90,7 +91,9 @@ D:\Idea\project\ci-cd\
 │   ├── runner\
 │   │   └── runner.go             ← 调用 PowerShell 引擎 + 报告持久化
 │   └── serve\
-│       ├── handler.go            ← HTTP handler + 13 个 API 路由
+│       ├── handler.go            ← HTTP handler + 中间件 + 路由注册
+│       ├── remote.go             ← SSH/SFTP 远程管理 handler（终端+文件）
+│       ├── log.go                ← 审计日志持久化 + 统一报告 API
 │       └── web\index.html        ← Web UI 前端（单页 HTML）
 │
 ├── ci-runner.ps1                 ← CI 执行引擎（check/build/test）
@@ -101,9 +104,12 @@ D:\Idea\project\ci-cd\
 │
 ├── projects.json                 ← 项目配置（Web UI 自动管理）
 ├── auth.json                     ← 认证信息（自动生成）
+├── servers.json                  ← 独立服务器配置（通过 Web UI / CLI 管理）
 ├── reports\                      ← 测试报告存储目录
 │   └── {project}\
 │       └── test-{timestamp}.json
+├── logs\                         ← 审计日志（每日自动轮转）
+│   └── audit-YYYY-MM-DD.jsonl    ← 所有操作日志，每条一行 JSON
 │
 ├── rules\                        ← 代码检查规则
 │   ├── eslint-vue.mjs            ← Vue 项目 ESLint 规则
@@ -128,7 +134,7 @@ D:\Idea\project\ci-cd\
 | **产物** | 单文件 `ci.exe`（Windows） |
 | **后端引擎** | PowerShell 脚本（Go 通过 `os/exec` 调用） |
 
-### 3.2 完整命令列表（15 个）
+### 3.2 完整命令列表（27 个）
 
 | 命令 | 功能 | 参数（可选 vs 必填） |
 |------|------|-------------------|
@@ -143,9 +149,26 @@ D:\Idea\project\ci-cd\
 | `describe` | 输出工具 Schema（LLM/AI Agent 发现用） | `--format openai/mcp/text` |
 | `passwd [user] [pass]` | 修改或重置 Web UI 登录密码 | 可选：不传则重置为默认 |
 | `report <project>` | 查看/删除测试报告 | `--json`, `--list`, `--delete <id>` |
+| `report all` | 列出所有项目的测试报告 | `--keyword`, `--json` |
 | `serve` | 启动 Web UI 服务器 | `--port 8080`, `--no-open` |
 | `doctor` | 诊断 CI/CD 环境状态 | `--json` |
 | `project list` | 列出所有项目的详细信息 | `--json` |
+| `local ls` | 列出本地目录（盘符/导航），用于选择项目路径 | `--path`（默认列盘符） |
+| `rules list` | 列出可用代码检查规则文件 | 无 |
+| `rules view <file>` | 查看规则文件内容 | `<file>`（必填） |
+| `remote ls <server>` | 列出远程服务器目录 | `--path`, `--source` |
+| `remote download <server>` | 从远程服务器下载文件 | `--path`（必填）, `--source` |
+| `remote upload <server>` | 上传文件到远程服务器 | `--file`（必填）, `--path`（必填）, `--source` |
+| `remote delete <server>` | 删除远程服务器上的文件或目录 | `--path`（必填）, `--source` |
+| `remote mkdir <server>` | 在远程服务器上创建目录 | `--path`（必填）, `--source` |
+| `server list` | 列出所有独立服务器 | 无 |
+| `server add` | 添加独立服务器 | `--name`, `--host`, `--user`（必填）, `--port`, `--auth-type`, `--key-path`, `--password` |
+| `server delete <name>` | 删除独立服务器 | 无 |
+| `log query` | 查询审计日志 | `--date`, `--level`, `--keyword`, `--limit`, `--json` |
+| `log dates` | 列出有审计日志的日期 | 无 |
+| `log delete` | 删除指定日期的审计日志 | `--date`（必填） |
+
+> 注：`remote term`（交互式 SSH 终端）仅 Web UI 提供，基于 WebSocket，不适合命令行模式，故未纳入 CLI。
 
 ### 3.3 执行结果格式
 
@@ -215,12 +238,15 @@ ci.exe serve
 | **⏯ 运行流水线** | 工具栏 | 对所有项目执行全链路 |
 | **🌐 自动流水线** | 工具栏开关 | ON 时单步通过后自动继续下一步 |
 | **📊 报告** | 项目行 | 查看最新测试报告弹窗 |
-| **➕ 添加项目** | 工具栏 | 编辑弹窗：名称、路径、部署配置、Git 远程、规则 |
+| **➕ 添加项目** | 工具栏 | 编辑弹窗：名称、路径（支持📁浏览选择）、部署配置、Git 远程、规则 |
 | **🔑 修改密码** | 头部按钮 | 输入旧密码 + 新密码 + 确认 |
 | **🏥 环境诊断** | 工具栏 | 检查工具链完整性 |
 | **📋 运行日志** | 底部面板 | 实时操作日志 |
+| **🖥️ 远程管理** | 头部 Tab | SSH 终端（xterm.js）+ 文件管理（左右分栏） |
+| **📋 审计日志** | 头部按钮 | 查看/搜索/删除持久化审计日志 |
+| **📊 所有报告** | 头部按钮 | 查看所有项目测试报告列表 |
 
-### 4.4 API 路由（共 13 个）
+### 4.4 API 路由（共 31 个）
 
 | 路由 | 方法 | 功能 |
 |------|------|------|
@@ -237,6 +263,24 @@ ci.exe serve
 | `/api/report/latest` | GET | 获取最新测试报告 |
 | `/api/report/list` | GET | 获取历史报告列表 |
 | `/api/report/delete` | POST | 删除指定报告 |
+| `/api/report/all` | GET | 获取所有项目测试报告（合并） |
+| `/api/rules/` | GET | 查看规则文件内容（路径后接文件名） |
+| `/api/local/ls` | GET | 列出本地目录（盘符/导航），用于项目路径浏览选择 |
+| `/api/remote/projects` | GET | 获取可远程管理的服务器列表（含项目+独立服务器） |
+| `/api/remote/servers` | GET/POST | 独立服务器 CRUD |
+| `/api/remote/server` | POST | 删除独立服务器 |
+| `/api/remote/term` | WebSocket | SSH 远程终端 |
+| `/api/remote/ls` | GET | 远程文件列表 |
+| `/api/remote/download-token` | GET | 生成一次性下载 token（绕过 Basic Auth 供浏览器原生下载） |
+| `/api/remote/download` | GET | 下载远程文件（支持 token 免认证） |
+| `/api/remote/upload` | POST | 上传文件到远程服务器 |
+| `/api/remote/delete` | POST | 删除远程文件/目录 |
+| `/api/remote/mkdir` | POST | 创建远程目录 |
+| `/api/remote/disconnect` | POST | 断开并清理缓存的 SSH 连接 |
+| `/api/log/append` | POST | 写入审计日志（前端 log() 调用） |
+| `/api/log/query` | GET | 查询审计日志（按日期/级别/关键字） |
+| `/api/log/dates` | GET | 列出有审计日志的日期 |
+| `/api/log/delete` | POST | 删除指定日期的审计日志 |
 
 ---
 
@@ -423,7 +467,7 @@ async function runAction(action, project) {
 | 层级 | 方式 |
 |------|------|
 | Web UI | HTTP Basic Auth |
-| 密码存储 | SHA256 + 16 字节随机盐 |
+| 登录密码存储 | SHA256 + 16 字节随机盐，不存明文 |
 | CLI 命令 | 本地执行，无需认证（依赖文件系统权限） |
 | MCP 调用 | 由 Host 代理认证 |
 
@@ -435,6 +479,61 @@ async function runAction(action, project) {
 | 最小长度 | 6 位 |
 | 修改方式 | Web UI 或 `ci passwd` |
 | 默认密码警告 | 启动时控制台输出 + 日志警告 |
+
+### 10.3 服务器/部署密码加密存储
+
+`projects.json` 和 `servers.json` 中的 SSH 密码（`deploy.password` / `server.password`）均以 **AES-256-GCM** 加密存储，磁盘上不存留明文。
+
+| 项目 | 实现 |
+|------|------|
+| 加密算法 | AES-256-GCM（带 nonce + 认证标签） |
+| 密钥 | 32 字节随机，存 `.secretkey` 文件（hex 编码，0600 权限） |
+| 密文格式 | `enc:base64(nonce+ciphertext)`，`enc:` 前缀区分明文/密文 |
+| 加密时机 | Web 保存项目/服务器时、CLI `server add` 时自动加密 |
+| 自动迁移 | 加载配置时检测明文密码自动加密回写（兼容历史数据） |
+| 解密时机 | SSH 连接时（`sshutil.BuildSSHConfig`）自动解密 |
+| API 脱敏 | 所有 API 响应中 password 字段返回空值，不暴露密文 |
+
+### 10.4 SSH 主机密钥校验
+
+采用 **TOFU（Trust On First Use）** 策略，防止中间人攻击：
+
+| 项目 | 实现 |
+|------|------|
+| Go 端 | `internal/sshutil` 实现 TOFU 回调，首次连接自动接受并写入 `.known_hosts`，后续严格校验，密钥不匹配则拒绝 |
+| PowerShell 端 | `cd-deploy.ps1` 使用 `StrictHostKeyChecking=accept-new` + `UserKnownHostsFile` |
+| known_hosts 文件 | `.known_hosts`，0600 权限 |
+
+### 10.5 CSRF 防护
+
+Web API 对所有状态变更方法（POST/PUT/DELETE）要求自定义请求头 `X-Requested-With: XMLHttpRequest`，浏览器跨站表单无法携带自定义头，从而阻止 CSRF 攻击。前端所有 POST 请求均已带上此头。
+
+### 10.6 文件下载认证
+
+浏览器原生下载（`<a download>` / iframe）无法可靠携带 Basic Auth 的 `Authorization` 头，故采用一次性 token 机制：
+
+1. 前端 `fetch('/api/remote/download-token')`（带 Basic Auth）获取 32 字节随机 token
+2. 用 `<a href="/api/remote/download?...&download_token=xxx" download>` 触发浏览器原生下载
+3. token 一次性消费、60 秒过期，`basicAuth` 中间件放行带有效 token 的请求
+
+### 10.7 并发安全
+
+| 项目 | 实现 |
+|------|------|
+| 认证状态 | `activeAuth` 全局变量用 `sync.RWMutex` 保护读写 |
+| SSH 连接缓存 | `getSSHClient` 用 double-check 锁模式，持锁期间不做网络 IO |
+| known_hosts 写入 | 追加写入时串行化，避免并发写损坏 |
+
+### 10.8 其他安全措施
+
+| 项目 | 实现 |
+|------|------|
+| 配置原子写入 | `projects.json`/`servers.json`/`auth.json` 等用临时文件 + rename 原子替换 |
+| 敏感文件权限 | 含密码的文件以 `0600` 权限写入 |
+| 路径穿越校验 | `handleViewRuleFile` 用 `IsPathSafe` 二次校验，禁止访问 rules 目录外文件 |
+| 输入校验 | `projectSaveHandler` 强类型反序列化 + 路径存在性/认证类型/端口/步骤 ID 校验 |
+| 命令注入防护 | `ci-runner.ps1` 自定义命令用 `& $cmd @args` 直接调用，禁用 `Invoke-Expression` |
+| SSH 连接回收 | 后台 reaper 每 5 分钟清理空闲超 30 分钟的连接，进程退出时统一关闭 |
 
 ---
 
@@ -547,11 +646,16 @@ $ ci doctor
 
 | 文件 | 位置 | 管理方式 | 格式 |
 |------|------|---------|------|
-| 项目配置 | `projects.json` | Web UI 增删改 | JSON |
-| 认证信息 | `auth.json` | 自动创建 + Web UI/CLI 改密 | JSON |
-| 测试报告 | `reports/{project}/test-*.json` | 自动生成 + Web UI 可删 | JSON |
-| 代码规则 | `rules/` | 手动编辑 | xml/mjs |
+| 项目配置 | `projects.json` | Web UI 增删改 / CLI `deploy` | JSON（部署密码 AES 加密） |
+| 认证信息 | `auth.json` | 自动创建 + Web UI/CLI 改密 | JSON（SHA256 哈希） |
+| 独立服务器 | `servers.json` | Web UI（远程管理 Tab）/ CLI `server add/list/delete` | JSON（密码 AES 加密） |
+| 加密主密钥 | `.secretkey` | 自动生成（0600 权限） | hex 编码 32 字节 |
+| SSH 主机密钥 | `.known_hosts` | TOFU 自动写入（0600 权限） | OpenSSH known_hosts 格式 |
+| 测试报告 | `reports/{project}/test-*.json` | 自动生成 + Web UI 可删 / CLI `report` | JSON |
+| 审计日志 | `logs/audit-YYYY-MM-DD.jsonl` | 自动写入（前端 log()）+ Web UI/CLI 查删 | JSONL |
+| 代码规则 | `rules/` | 手动编辑 + CLI `rules list/view` | xml/mjs |
 | Git hooks | `hooks/` | 手动编辑 | batch |
+| Web 前端 | `web/` | 内嵌（index.html + app.css + app.js） | HTML/CSS/JS |
 
 ---
 

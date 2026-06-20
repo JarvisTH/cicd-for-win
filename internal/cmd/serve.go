@@ -41,9 +41,11 @@ var CmdServe = &cobra.Command{
 		go func() {
 			<-quit
 			fmt.Println("\n🛑 关闭服务器...")
+			// 优雅退出：先停 HTTP，再清理缓存的 SSH 连接，防止泄漏
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			server.Shutdown(ctx)
+			serve.CloseAllSSHClients()
 		}()
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

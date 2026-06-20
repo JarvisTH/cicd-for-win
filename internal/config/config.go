@@ -8,19 +8,78 @@ import (
 )
 
 type Project struct {
-	Name    string        `json:"name"`
-	Path    string        `json:"path"`
-	Enabled bool          `json:"enabled"`
-	Deploy  *DeployConfig `json:"deploy,omitempty"`
-	CiDir   string        `json:"-"` // 自动填充
+	Name     string        `json:"name"`
+	Path     string        `json:"path"`
+	Enabled  bool          `json:"enabled"`
+	Deploy   *DeployConfig `json:"deploy,omitempty"`
+	Pipeline *PipelineConfig `json:"pipeline,omitempty"`
+	CiDir    string        `json:"-"` // 自动填充
+}
+
+// PipelineConfig 定义项目的自定义流水线步骤
+// Steps 为空时使用默认顺序: check → build → test → push → deploy
+type PipelineConfig struct {
+	Steps []PipelineStep `json:"steps,omitempty"`
+}
+
+// PipelineStep 流水线中的单个步骤
+type PipelineStep struct {
+	ID      string `json:"id"`       // check/build/test/push/deploy
+	Enabled bool   `json:"enabled"`  // 是否启用
+	Command string `json:"command,omitempty"` // 自定义命令（为空时使用默认命令）
+	Args    string `json:"args,omitempty"`    // 自定义参数/额外参数
+}
+
+// StepDefaultCommands 每个步骤的默认命令描述（仅供参考，实际执行由 ci-runner.ps1 处理）
+var StepDefaultCommands = map[string]string{
+	"check":  "自动检测（tsc/eslint/mvn compile）",
+	"build":  "自动检测（npm run build / mvn package）",
+	"test":   "自动检测（jest/vitest/mvn test）",
+	"push":   "git push（推送所有远程仓库）",
+	"deploy": "SFTP 上传 + 远程重启",
+}
+
+// DefaultPipelineSteps 返回默认的流水线步骤配置
+func DefaultPipelineSteps() []PipelineStep {
+	return []PipelineStep{
+		{ID: "check", Enabled: true},
+		{ID: "build", Enabled: true},
+		{ID: "test", Enabled: true},
+		{ID: "push", Enabled: true},
+		{ID: "deploy", Enabled: true},
+	}
+}
+
+// GetEnabledSteps 返回项目启用的流水线步骤（按配置顺序）
+// 如果项目没有 Pipeline 配置，返回默认步骤
+func (p *Project) GetEnabledSteps() []string {
+	defaults := DefaultPipelineSteps()
+	if p.Pipeline == nil || len(p.Pipeline.Steps) == 0 {
+		var result []string
+		for _, s := range defaults {
+			if s.Enabled {
+				result = append(result, s.ID)
+			}
+		}
+		return result
+	}
+	var result []string
+	for _, s := range p.Pipeline.Steps {
+		if s.Enabled {
+			result = append(result, s.ID)
+		}
+	}
+	return result
 }
 
 type DeployConfig struct {
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	User      string `json:"user"`
-	RemoteDir string `json:"remote_dir"`
-	AuthType  string `json:"auth_type"`
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	User         string `json:"user"`
+	RemoteDir    string `json:"remote_dir"`
+	AuthType     string `json:"auth_type"`
+	IdentityFile string `json:"identity_file,omitempty"`
+	Password     string `json:"password,omitempty"`
 }
 
 type Config struct {
@@ -43,8 +102,22 @@ func Load(configPath string) (*Config, error) {
 	ciDir := filepath.Dir(exePath)
 	for i := range cfg.Projects {
 		cfg.Projects[i].CiDir = ciDir
+		// 规范化部署配置：端口默认 22，认证类型默认值
+		if cfg.Projects[i].Deploy != nil {
+			cfg.Projects[i].Deploy.normalize()
+		}
 	}
 	return &cfg, nil
+}
+
+// normalize 规范化部署配置：补全端口默认值，校正认证类型。
+func (d *DeployConfig) normalize() {
+	if d.Port == 0 {
+		d.Port = 22
+	}
+	if d.AuthType == "" {
+		d.AuthType = "key"
+	}
 }
 
 func (c *Config) Filter(args []string) []Project {

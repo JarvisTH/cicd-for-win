@@ -331,17 +331,70 @@ param(
     [ValidateSet("check","build","test")]
     [string]$Action = "check",
     [string]$ProjectPath = (Get-Location).Path,
-    [switch]$Json
+    [switch]$Json,
+    [string]$CustomCommand = "",  # 自定义命令（为空时使用默认逻辑）
+    [string]$CustomArgs = ""       # 自定义额外参数
 )
 
 $start = Get-Date
 $result = $false
 $testReport = $null
 
-switch ($Action) {
-    "check" { $result = Invoke-Check $ProjectPath }
-    "build" { $result = Invoke-Build $ProjectPath }
-    "test"  { $result, $testReport = Invoke-Test $ProjectPath }
+# 如果指定了自定义命令，直接执行（跳过自动检测逻辑）
+if ($CustomCommand -ne "") {
+    Write-Host "[$Action] 执行自定义命令: $CustomCommand $CustomArgs"
+    # 将命令与参数拆分为数组，用 & 直接调用而非 Invoke-Expression，避免命令注入
+    # CustomArgs 按空格拆分为独立参数
+    $cmdParts = @($CustomCommand)
+    if ($CustomArgs) {
+        $cmdParts += ($CustomArgs -split '\s+' | Where-Object { $_ })
+    }
+    if ($Action -eq "test") {
+        # test 步骤需要尝试解析 JSON 报告
+        Push-Location $ProjectPath
+        try {
+            $output = & $cmdParts[0] @($cmdParts[1..($cmdParts.Count-1)]) 2>&1
+            $exitCode = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
+        $result = ($exitCode -eq 0)
+        # 尝试从输出中提取 JSON 测试报告
+        $jsonLine = $output | Where-Object { $_ -match '^\{"numTotalTestSuites"' } | Select-Object -Last 1
+        if ($jsonLine) {
+            try {
+                $r = $jsonLine | ConvertFrom-Json
+                $testReport = @{
+                    total = $r.numTotalTests; passed = $r.numPassedTests
+                    failed = $r.numFailedTests; skipped = $r.numPendingTests
+                    coverage = ""; failures = @(); raw_log = ($output | Out-String).Trim()
+                }
+                foreach ($suite in $r.testResults) {
+                    foreach ($t in $suite.assertionResults) {
+                        if ($t.status -eq 'failed') {
+                            $testReport.failures += @{ suite = $suite.name.Split('/')[-1]; test = $t.fullName; message = ($t.failureMessages[0] -replace "`n"," ") }
+                        }
+                    }
+                }
+            } catch { Write-Warning "解析自定义测试命令的 JSON 输出失败" }
+        }
+    } else {
+        Push-Location $ProjectPath
+        try {
+            & $cmdParts[0] @($cmdParts[1..($cmdParts.Count-1)]) 2>&1 | Write-Host
+            $result = ($LASTEXITCODE -eq 0)
+        } finally {
+            Pop-Location
+        }
+    }
+    if ($result) { Write-Host "✅ 自定义命令执行成功" }
+    else { Write-Host "❌ 自定义命令执行失败" }
+} else {
+    switch ($Action) {
+        "check" { $result = Invoke-Check $ProjectPath }
+        "build" { $result = Invoke-Build $ProjectPath }
+        "test"  { $result, $testReport = Invoke-Test $ProjectPath }
+    }
 }
 
 $duration = (Get-Date) - $start

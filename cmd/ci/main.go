@@ -33,6 +33,11 @@ func main() {
 		cmd.CmdDoctor,
 		cmd.CmdProjectList,
 		cmd.CmdServe,
+		cmd.CmdRemote,
+		cmd.CmdServer,
+		cmd.CmdLog,
+		cmd.CmdLocal,
+		cmd.CmdRules,
 	)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

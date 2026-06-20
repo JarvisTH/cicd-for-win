@@ -23,11 +23,12 @@ put -r "$LocalPath" "$RemotePath"
 bye
 "@ | Out-File -Encoding ASCII $batchFile
 
+    # StrictHostKeyChecking=accept-new: 首次连接自动接受主机密钥并记录，后续变更则拒绝（防中间人攻击）
     if ($DeployConfig.auth_type -eq "key") {
-        $sftpArgs = "-oPort=$($DeployConfig.port) -i `"$($DeployConfig.identity_file)`" -b $batchFile $($DeployConfig.user)@$($DeployConfig.host)"
+        $sftpArgs = "-oPort=$($DeployConfig.port) -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=`"$PSScriptRoot\.known_hosts`" -i `"$($DeployConfig.identity_file)`" -b $batchFile $($DeployConfig.user)@$($DeployConfig.host)"
     } else {
         Write-Warning "密码模式不支持 SFTP，降级为密钥模式"
-        $sftpArgs = "-oPort=$($DeployConfig.port) -b $batchFile $($DeployConfig.user)@$($DeployConfig.host)"
+        $sftpArgs = "-oPort=$($DeployConfig.port) -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=`"$PSScriptRoot\.known_hosts`" -b $batchFile $($DeployConfig.user)@$($DeployConfig.host)"
     }
     & "sftp.exe" $sftpArgs 2>&1
     Remove-Item $batchFile -Force
@@ -36,10 +37,11 @@ bye
 
 function Invoke-SSHCommand {
     param($DeployConfig, [string]$Command, [int]$TimeoutSeconds = 60)
+    # StrictHostKeyChecking=accept-new: 首次接受并记录主机密钥，后续变更拒绝（防中间人攻击）
     if ($DeployConfig.auth_type -eq "key") {
-        $sshArgs = "-oPort=$($DeployConfig.port) -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i `"$($DeployConfig.identity_file)`" $($DeployConfig.user)@$($DeployConfig.host) `"$Command`""
+        $sshArgs = "-oPort=$($DeployConfig.port) -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=`"$PSScriptRoot\.known_hosts`" -i `"$($DeployConfig.identity_file)`" $($DeployConfig.user)@$($DeployConfig.host) `"$Command`""
     } else {
-        $sshArgs = "-oPort=$($DeployConfig.port) -o ConnectTimeout=10 -o StrictHostKeyChecking=no $($DeployConfig.user)@$($DeployConfig.host) `"$Command`""
+        $sshArgs = "-oPort=$($DeployConfig.port) -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=`"$PSScriptRoot\.known_hosts`" $($DeployConfig.user)@$($DeployConfig.host) `"$Command`""
     }
     $outFile = "$env:TEMP\ssh_out_$([System.Guid]::NewGuid()).txt"
     $errFile = "$env:TEMP\ssh_err_$([System.Guid]::NewGuid()).txt"
