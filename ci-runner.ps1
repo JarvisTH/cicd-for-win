@@ -1,14 +1,53 @@
+﻿param(
+    [ValidateSet("check","build","test")]
+    [string]$Action = "check",
+    [string]$ProjectPath = (Get-Location).Path,
+    [switch]$Json,
+    [string]$CustomCommand = "",  # 自定义命令（为空时使用默认逻辑）
+    [string]$CustomArgs = "",     # 自定义额外参数
+    [string]$RuleStates = ""      # 代码检查规则开关，JSON 数组：[{"id":"tsc","enabled":true}]
+)
+
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# 全局错误日志收集器（替代 Start-Transcript，避免污染 stdout）
+$script:errorLog = [System.Collections.ArrayList]@()
+
+# Invoke-CmdSafe 安全执行命令并捕获输出到 errorLog
+# 不使用 Write-Output（避免污染 stdout 导致 JSON 解析失败），输出仅在失败时收集到 errorLog
+function Invoke-CmdSafe($cmd, $cmdArgs) {
+    $output = & $cmd @cmdArgs 2>&1
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        # 失败时收集完整输出到 errorLog
+        $script:errorLog.AddRange(@($output))
+        # 打印前 5 行和后 10 行的摘要到 stderr（不污染 stdout）
+        $lines = @($output)
+        $total = $lines.Count
+        if ($total -le 20) {
+            $lines | ForEach-Object { [Console]::Error.WriteLine($_) }
+        } else {
+            $lines[0..4] | ForEach-Object { [Console]::Error.WriteLine($_) }
+            [Console]::Error.WriteLine("... ($total lines total, showing first 5 and last 10) ...")
+            $lines[($total-10)..($total-1)] | ForEach-Object { [Console]::Error.WriteLine($_) }
+        }
+    }
+    return $code
+}
+
 function Get-ProjectType($projectPath) {
     $pkgFile = "$projectPath/package.json"
     if (Test-Path $pkgFile) {
         $pkg = Get-Content $pkgFile -Raw | ConvertFrom-Json
-        $deps = @{}
-        if ($pkg.dependencies) { $deps = $pkg.dependencies }
-        if ($pkg.devDependencies) { $pkg.devDependencies.PSObject.Properties | ForEach-Object { $deps[$_.Name] = $_.Value } }
-        if ($deps.Keys -contains "react") { return "React" }
-        if ($deps.Keys -contains "vue" -or $deps.Keys -contains "vue-router") { return "Vue" }
-        if ($deps.Keys -contains "@angular/core") { return "Angular" }
-        if ($deps.Keys -contains "next") { return "Next" }
+        # 将 dependencies 和 devDependencies 的属性名收集到 hashtable（兼容 PSObject）
+        $depNames = @{}
+        if ($pkg.dependencies) { $pkg.dependencies.PSObject.Properties | ForEach-Object { $depNames[$_.Name] = $true } }
+        if ($pkg.devDependencies) { $pkg.devDependencies.PSObject.Properties | ForEach-Object { $depNames[$_.Name] = $true } }
+        if ($depNames.ContainsKey("react")) { return "React" }
+        if ($depNames.ContainsKey("vue") -or $depNames.ContainsKey("vue-router")) { return "Vue" }
+        if ($depNames.ContainsKey("@angular/core")) { return "Angular" }
+        if ($depNames.ContainsKey("next")) { return "Next" }
         return "Node"
     }
     if (Test-Path "$projectPath/pom.xml") {
@@ -22,94 +61,118 @@ function Get-ProjectType($projectPath) {
     return "Unknown"
 }
 
-function Invoke-Check($projectPath) {
+# Test-RuleEnabled 判断指定规则 id 是否启用。
+# $states 为 hashtable（id -> bool）；为空或不含该 id 时默认启用。
+function Test-RuleEnabled($states, $id) {
+    if (-not $states) { return $true }
+    if ($states.ContainsKey($id)) { return [bool]$states[$id] }
+    return $true
+}
+
+function Invoke-Check($projectPath, $ruleStates) {
     $type = Get-ProjectType($projectPath)
     $rulesDir = Join-Path $PSScriptRoot "rules"
-    Write-Host "[$type] 开始代码检查..."
+    [Console]::Error.WriteLine("[$type] 开始代码检查...")
 
-    switch ($type) {
-        "React" {
-            & "npx.cmd" tsc --noEmit 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ TypeScript 类型检查失败"; return $false }
-            & "npx.cmd" eslint src/ 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ ESLint 检查失败"; return $false }
+    # 切换到项目目录执行，确保 tsc/eslint/mvn 能找到项目配置文件和源码
+    Push-Location $projectPath
+    try {
+        switch ($type) {
+            "React" {
+                if (Test-RuleEnabled $ruleStates 'tsc') {
+                    $code = Invoke-CmdSafe "npx.cmd" @("tsc","--noEmit")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ TypeScript 类型检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过 TypeScript 类型检查（已禁用）") }
+                if (Test-RuleEnabled $ruleStates 'eslint') {
+                    $code = Invoke-CmdSafe "npx.cmd" @("eslint","src/")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ ESLint 检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过 ESLint 检查（已禁用）") }
+            }
+            "Vue" {
+                if (Test-RuleEnabled $ruleStates 'tsc') {
+                    $code = Invoke-CmdSafe "npx.cmd" @("vue-tsc","--noEmit")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ vue-tsc 类型检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过 vue-tsc 类型检查（已禁用）") }
+                if (Test-RuleEnabled $ruleStates 'eslint') {
+                    $eslintConfig = Join-Path $rulesDir "eslint-vue.mjs"
+                    $code = Invoke-CmdSafe "npx.cmd" @("eslint","-c",$eslintConfig,"src/")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ ESLint 检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过 ESLint 检查（已禁用）") }
+            }
+            "Maven" {
+                if (Test-RuleEnabled $ruleStates 'compile') {
+                    $code = Invoke-CmdSafe "mvn.cmd" @("compile","-q")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ 编译检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过编译检查（已禁用）") }
+                if (Test-RuleEnabled $ruleStates 'checkstyle') {
+                    $checkstyleConfig = Join-Path $rulesDir "checkstyle.xml"
+                    $code = Invoke-CmdSafe "mvn.cmd" @("checkstyle:check","-Dcheckstyle.config=$checkstyleConfig")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ Checkstyle 检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过 Checkstyle 检查（已禁用）") }
+            }
+            "MavenMulti" {
+                if (Test-RuleEnabled $ruleStates 'compile') {
+                    $code = Invoke-CmdSafe "mvn.cmd" @("compile","-q")
+                    if ($code -ne 0) { [Console]::Error.WriteLine("❌ 多模块编译检查失败"); return $false }
+                } else { [Console]::Error.WriteLine("⊘ 跳过多模块编译检查（已禁用）") }
+            }
+            default {
+                [Console]::Error.WriteLine("未知项目类型: $type，跳过检查")
+                return $true
+            }
         }
-        "Vue" {
-            & "npx.cmd" vue-tsc --noEmit 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ vue-tsc 类型检查失败"; return $false }
-            $eslintConfig = Join-Path $rulesDir "eslint-vue.mjs"
-            & "npx.cmd" eslint -c "$eslintConfig" src/ 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ ESLint 检查失败"; return $false }
-        }
-        "Maven" {
-            & "mvn.cmd" compile -Xlint:all 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ 编译检查失败"; return $false }
-            $checkstyleConfig = Join-Path $rulesDir "checkstyle.xml"
-            & "mvn.cmd" checkstyle:check -Dcheckstyle.config="$checkstyleConfig" 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ Checkstyle 检查失败"; return $false }
-        }
-        "MavenMulti" {
-            Push-Location $projectPath
-            & "mvn.cmd" compile -Xlint:all 2>&1
-            $exitCode = $LASTEXITCODE
-            Pop-Location
-            if ($exitCode -ne 0) { Write-Host "❌ 多模块编译检查失败"; return $false }
-        }
-        default {
-            Write-Warning "未知项目类型: $type，跳过检查"
-            return $true
-        }
+    } finally {
+        Pop-Location
     }
-    Write-Host "✅ 代码检查通过"
+    [Console]::Error.WriteLine("✅ 代码检查通过")
     return $true
 }
 
 function Invoke-Build($projectPath) {
     $type = Get-ProjectType($projectPath)
-    Write-Host "[$type] 开始构建..."
+    [Console]::Error.WriteLine("[$type] 开始构建...")
 
-    switch ($type) {
-        "React" {
-            & "npm.cmd" run build 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ npm run build 失败"; return $false }
-            if (-not (Test-Path "$projectPath/dist/index.html")) { Write-Host "❌ 产物 dist/index.html 不存在"; return $false }
-            Write-Host "✅ 构建成功: dist/"
+    Push-Location $projectPath
+    try {
+        switch ($type) {
+            "React" {
+                $code = Invoke-CmdSafe "npm.cmd" @("run","build")
+                if ($code -ne 0) { [Console]::Error.WriteLine("❌ npm run build 失败"); return $false }
+                if (-not (Test-Path "dist/index.html")) { [Console]::Error.WriteLine("❌ 产物 dist/index.html 不存在"); return $false }
+                [Console]::Error.WriteLine("✅ 构建成功: dist/")
+            }
+            "Vue" {
+                $code = Invoke-CmdSafe "npm.cmd" @("run","build")
+                if ($code -ne 0) { [Console]::Error.WriteLine("❌ npm run build 失败"); return $false }
+                if (-not (Test-Path "dist/index.html")) { [Console]::Error.WriteLine("❌ 产物 dist/index.html 不存在"); return $false }
+                [Console]::Error.WriteLine("✅ 构建成功: dist/")
+            }
+            "Maven" {
+                $code = Invoke-CmdSafe "mvn.cmd" @("clean","package","-DskipTests","-q")
+                if ($code -ne 0) { [Console]::Error.WriteLine("❌ Maven 构建失败"); return $false }
+                $jar = Get-ChildItem "target/*.jar" | Where-Object { $_.Name -notmatch 'sources|javadoc|original' } | Select-Object -First 1
+                if (-not $jar) { [Console]::Error.WriteLine("❌ 未找到 *.jar 产物"); return $false }
+                [Console]::Error.WriteLine("✅ 构建成功: $($jar.Name)")
+            }
+            "MavenMulti" {
+                $code = Invoke-CmdSafe "mvn.cmd" @("clean","install","-DskipTests","-q")
+                if ($code -ne 0) { [Console]::Error.WriteLine("❌ 多模块构建失败"); return $false }
+                [Console]::Error.WriteLine("✅ 全部模块构建成功")
+            }
+            default {
+                [Console]::Error.WriteLine("未知项目类型: $type，跳过构建")
+                return $false
+            }
         }
-        "Vue" {
-            & "npm.cmd" run build 2>&1
-            if ($LASTEXITCODE -ne 0) { Write-Host "❌ npm run build 失败"; return $false }
-            if (-not (Test-Path "$projectPath/dist/index.html")) { Write-Host "❌ 产物 dist/index.html 不存在"; return $false }
-            Write-Host "✅ 构建成功: dist/"
-        }
-        "Maven" {
-            Push-Location $projectPath
-            & "mvn.cmd" clean package -DskipTests 2>&1
-            $exitCode = $LASTEXITCODE
-            Pop-Location
-            if ($exitCode -ne 0) { Write-Host "❌ Maven 构建失败"; return $false }
-            $jar = Get-ChildItem "$projectPath/target/*.jar" | Where-Object { $_.Name -notmatch 'sources|javadoc|original' } | Select-Object -First 1
-            if (-not $jar) { Write-Host "❌ 未找到 *.jar 产物"; return $false }
-            Write-Host "✅ 构建成功: $($jar.Name)"
-        }
-        "MavenMulti" {
-            Push-Location $projectPath
-            & "mvn.cmd" clean install -DskipTests 2>&1
-            $exitCode = $LASTEXITCODE
-            Pop-Location
-            if ($exitCode -ne 0) { Write-Host "❌ 多模块构建失败"; return $false }
-            Write-Host "✅ 全部模块构建成功"
-        }
-        default {
-            Write-Warning "未知项目类型: $type，跳过构建"
-            return $false
-        }
+    } finally {
+        Pop-Location
     }
     return $true
 }
 
 function Invoke-Test($projectPath) {
     $type = Get-ProjectType($projectPath)
-    Write-Host "[$type] 开始测试..."
+    [Console]::Error.WriteLine("[$type] 开始测试...")
 
     $report = @{ total = 0; passed = 0; failed = 0; skipped = 0; coverage = ""; failures = @(); raw_log = "" }
 
@@ -122,7 +185,7 @@ function Invoke-Test($projectPath) {
             $isVitest = ($pkg.devDependencies | Get-Member -MemberType NoteProperty | Where-Object { $_.Name -match 'vitest' }) -or ($pkg.dependencies | Get-Member -MemberType NoteProperty | Where-Object { $_.Name -match 'vitest' })
 
             if ($isVitest) {
-                Write-Host "  检测到 Vitest"
+                [Console]::Error.WriteLine("  检测到 Vitest")
                 $output = & "npx.cmd" vitest run --reporter=json 2>&1
                 $exitCode = $LASTEXITCODE
                 # 尝试从 stdout 提取 JSON（vitest --reporter=json 输出到最后一行）
@@ -141,7 +204,7 @@ function Invoke-Test($projectPath) {
                                 }
                             }
                         }
-                    } catch { Write-Warning "解析 Vitest JSON 失败" }
+                    } catch { [Console]::Error.WriteLine("解析 Vitest JSON 失败") }
                 }
                 # 覆盖率
                 $covFile = "$projectPath/coverage/coverage-summary.json"
@@ -150,10 +213,10 @@ function Invoke-Test($projectPath) {
                         $cov = Get-Content $covFile -Raw | ConvertFrom-Json
                         $lines = $cov.total.lines.pct
                         $report.coverage = "$($lines)%"
-                    } catch { Write-Warning "解析覆盖率失败" }
+                    } catch { [Console]::Error.WriteLine("解析覆盖率失败") }
                 }
             } elseif ($isJest) {
-                Write-Host "  检测到 Jest"
+                [Console]::Error.WriteLine("  检测到 Jest")
                 $output = & "npx.cmd" jest --json --coverage 2>&1
                 $exitCode = $LASTEXITCODE
                 # Jest 输出 JSON 在 stdout 最后一段
@@ -175,7 +238,7 @@ function Invoke-Test($projectPath) {
                                 }
                             }
                         }
-                    } catch { Write-Warning "解析 Jest JSON 失败" }
+                    } catch { [Console]::Error.WriteLine("解析 Jest JSON 失败") }
                 }
             } else {
                 # 兜底：直接跑 npm test
@@ -191,7 +254,7 @@ function Invoke-Test($projectPath) {
             $isVitest = ($pkg.devDependencies | Get-Member -MemberType NoteProperty | Where-Object { $_.Name -match 'vitest' }) -or ($pkg.dependencies | Get-Member -MemberType NoteProperty | Where-Object { $_.Name -match 'vitest' })
 
             if ($isVitest) {
-                Write-Host "  检测到 Vitest"
+                [Console]::Error.WriteLine("  检测到 Vitest")
                 $output = & "npx.cmd" vitest run --reporter=json 2>&1
                 $exitCode = $LASTEXITCODE
                 $jsonLines = $output | Where-Object { $_ -match '^\{"numTotalTestSuites"' } | Select-Object -Last 1
@@ -209,7 +272,7 @@ function Invoke-Test($projectPath) {
                                 }
                             }
                         }
-                    } catch { Write-Warning "解析 Vitest JSON 失败" }
+                    } catch { [Console]::Error.WriteLine("解析 Vitest JSON 失败") }
                 }
                 $covFile = "$projectPath/coverage/coverage-summary.json"
                 if (Test-Path $covFile) {
@@ -247,7 +310,7 @@ function Invoke-Test($projectPath) {
                                 }
                             }
                         }
-                    } catch { Write-Warning "解析 $($xmlFile.Name) 失败: $_" }
+                    } catch { [Console]::Error.WriteLine("解析 $($xmlFile.Name) 失败: $_") }
                 }
                 $report.passed = $report.total - $report.failed - $report.skipped
             }
@@ -265,7 +328,7 @@ function Invoke-Test($projectPath) {
                         $total = $covered + $missed
                         if ($total -gt 0) { $report.coverage = "{0:N1}%" -f (($covered / $total) * 100) }
                     }
-                } catch { Write-Warning "解析 JaCoCo 失败" }
+                } catch { [Console]::Error.WriteLine("解析 JaCoCo 失败") }
             }
         }
         "MavenMulti" {
@@ -302,39 +365,28 @@ function Invoke-Test($projectPath) {
             }
         }
         default {
-            Write-Warning "未知项目类型: $type，跳过测试"
+            [Console]::Error.WriteLine("未知项目类型: $type，跳过测试")
             return $false, $null
         }
     }
 
-    # 输出结果摘要
+    # 输出结果摘要到 stderr
     if ($report.total -gt 0) {
-        Write-Host "📊 测试结果: $($report.passed)/$($report.total) 通过" -ForegroundColor $(
-            if ($report.failed -eq 0) { 'Green' } else { 'Red' }
-        )
-        if ($report.coverage) { Write-Host "📈 覆盖率: $($report.coverage)" }
+        [Console]::Error.WriteLine("📊 测试结果: $($report.passed)/$($report.total) 通过")
+        if ($report.coverage) { [Console]::Error.WriteLine("📈 覆盖率: $($report.coverage)") }
         if ($report.failed -gt 0) {
-            Write-Host "❌ $($report.failed) 个失败:" -ForegroundColor Red
+            [Console]::Error.WriteLine("❌ $($report.failed) 个失败:")
             foreach ($f in $report.failures) {
-                Write-Host "   - [$($f.suite)] $($f.test): $($f.message)"
+                [Console]::Error.WriteLine("   - [$($f.suite)] $($f.test): $($f.message)")
             }
         }
     } else {
-        Write-Host "⚠️ 未检测到测试用例或测试框架" -ForegroundColor Yellow
+        [Console]::Error.WriteLine("⚠️ 未检测到测试用例或测试框架")
     }
 
     return ($report.failed -eq 0), $report
 }
 
-# 主入口
-param(
-    [ValidateSet("check","build","test")]
-    [string]$Action = "check",
-    [string]$ProjectPath = (Get-Location).Path,
-    [switch]$Json,
-    [string]$CustomCommand = "",  # 自定义命令（为空时使用默认逻辑）
-    [string]$CustomArgs = ""       # 自定义额外参数
-)
 
 $start = Get-Date
 $result = $false
@@ -342,7 +394,7 @@ $testReport = $null
 
 # 如果指定了自定义命令，直接执行（跳过自动检测逻辑）
 if ($CustomCommand -ne "") {
-    Write-Host "[$Action] 执行自定义命令: $CustomCommand $CustomArgs"
+    [Console]::Error.WriteLine("[$Action] 执行自定义命令: $CustomCommand $CustomArgs")
     # 将命令与参数拆分为数组，用 & 直接调用而非 Invoke-Expression，避免命令注入
     # CustomArgs 按空格拆分为独立参数
     $cmdParts = @($CustomCommand)
@@ -376,22 +428,34 @@ if ($CustomCommand -ne "") {
                         }
                     }
                 }
-            } catch { Write-Warning "解析自定义测试命令的 JSON 输出失败" }
+            } catch { [Console]::Error.WriteLine("解析自定义测试命令的 JSON 输出失败") }
         }
     } else {
         Push-Location $ProjectPath
         try {
-            & $cmdParts[0] @($cmdParts[1..($cmdParts.Count-1)]) 2>&1 | Write-Host
+            & $cmdParts[0] @($cmdParts[1..($cmdParts.Count-1)]) 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
             $result = ($LASTEXITCODE -eq 0)
         } finally {
             Pop-Location
         }
     }
-    if ($result) { Write-Host "✅ 自定义命令执行成功" }
-    else { Write-Host "❌ 自定义命令执行失败" }
+    if ($result) { Write-Output "✅ 自定义命令执行成功" }
+    else { [Console]::Error.WriteLine("❌ 自定义命令执行失败") }
 } else {
+    # 解析规则开关 JSON（形如 [{"id":"tsc","enabled":true},{"id":"eslint","enabled":false}]）为 hashtable
+    $ruleStatesHash = $null
+    if ($RuleStates -ne "") {
+        try {
+            $ruleArr = $RuleStates | ConvertFrom-Json
+            $ruleStatesHash = @{}
+            foreach ($item in $ruleArr) {
+                $ruleStatesHash[$item.id] = [bool]$item.enabled
+            }
+        } catch { [Console]::Error.WriteLine("解析 RuleStates 失败: $_") }
+    }
+
     switch ($Action) {
-        "check" { $result = Invoke-Check $ProjectPath }
+        "check" { $result = Invoke-Check $ProjectPath $ruleStatesHash }
         "build" { $result = Invoke-Build $ProjectPath }
         "test"  { $result, $testReport = Invoke-Test $ProjectPath }
     }
@@ -406,6 +470,13 @@ if ($Json) {
         duration = "{0:N1}s" -f $duration.TotalSeconds
     }
     if ($testReport) { $output.report = $testReport }
-    $output | ConvertTo-Json -Depth 10
+    # 失败时从 $script:errorLog 收集错误详情，供前端展示
+    if (-not $result -and $script:errorLog.Count -gt 0) {
+        $errLog = ($script:errorLog -join "`n").Trim()
+        if ($errLog.Length -gt 5000) { $errLog = $errLog.Substring($errLog.Length - 5000) }
+        $output.error_log = $errLog
+    }
+    # 使用 -Compress 输出单行 JSON，避免 Write-Output 输出干扰 JSON 解析
+    $output | ConvertTo-Json -Depth 10 -Compress
 }
 exit $(if ($result) { 0 } else { 1 })

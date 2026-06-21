@@ -127,7 +127,10 @@ func NewHandler(ciDir string) http.Handler {
 	mux.HandleFunc("/api/status", apiHandler("status"))
 	mux.HandleFunc("/api/projects", projectListHandler)
 	mux.HandleFunc("/api/project", projectSaveHandler)
+	mux.HandleFunc("/api/deploy", deployHandler)
 	mux.HandleFunc("/api/deploy/test", deployTestHandler)
+	mux.HandleFunc("/api/steps/status", stepStatusHandler)
+	mux.HandleFunc("/api/steps/status/clear", stepStatusClearHandler)
 	mux.HandleFunc("/api/auth/status", authStatusHandler)
 	mux.HandleFunc("/api/auth/change-password", changePasswordHandler)
 	mux.HandleFunc("/api/report/latest", latestReportHandler)
@@ -147,6 +150,7 @@ func NewHandler(ciDir string) http.Handler {
 	mux.HandleFunc("/api/rules/", handleViewRuleFile)
 
 	// 本地目录浏览（用于选择项目路径）
+	mux.HandleFunc("/api/project/detect", handleProjectDetect)
 	mux.HandleFunc("/api/local/ls", handleLocalLs)
 
 	// 远程管理 API
@@ -254,10 +258,15 @@ func apiHandler(action string) http.HandlerFunc {
 		// 从项目配置中查找该步骤的自定义命令
 		customCommand, customArgs := findPipelineStepCommand(ciDir, project, action)
 
+		// 将项目名解析为实际路径
+		projectPath := findProjectPath(ciDir, project)
+		if projectPath == "" {
+			projectPath = project
+		}
 		args := []string{"-ExecutionPolicy", "Bypass",
 			"-File", filepath.Join(ciDir, "ci-runner.ps1"),
 			"-Action", action,
-			"-ProjectPath", project,
+			"-ProjectPath", projectPath,
 			"-Json"}
 		if customCommand != "" {
 			args = append(args, "-CustomCommand", customCommand)
@@ -266,24 +275,86 @@ func apiHandler(action string) http.HandlerFunc {
 			args = append(args, "-CustomArgs", customArgs)
 		}
 		cmd := exec.Command("powershell.exe", args...)
-		output, err := cmd.Output()
-		if err != nil {
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
-		}
-		w.Write(output)
+		// 构建人类可读的命令字符串（供前端日志展示）
+		cmdStr := buildCommandString("powershell.exe", args)
+		// 分离 stdout 和 stderr：stdout 只有 JSON，stderr 是日志/错误信息
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
 
-		// 测试完成后，将报告持久化到磁盘
-		if action == "test" {
-			var result runner.Result
-			if err := json.Unmarshal(output, &result); err == nil && result.Report != nil {
+		stdoutStr := strings.TrimSpace(stdout.String())
+		stderrStr := strings.TrimSpace(stderr.String())
+
+		// 尝试解析 stdout 为 JSON（成功或失败的 JSON 结果）
+		var result runner.Result
+		if jsonErr := json.Unmarshal([]byte(stdoutStr), &result); jsonErr == nil {
+			// 填充实际执行的命令
+			result.Command = cmdStr
+			// 脚本已将完整错误日志写入 JSON 的 error_log 字段，不覆盖
+			// 仅当脚本未提供 error_log 时，用 stderr 内容做 fallback
+			if result.Status == "fail" && result.ErrorLog == "" && stderrStr != "" {
+				result.ErrorLog = stderrStr
+			}
+			// stdout 是合法 JSON，直接返回（含 error_log）
+			if data, mErr := json.Marshal(result); mErr == nil {
+				w.Write(data)
+			} else {
+				w.Write([]byte(stdoutStr))
+			}
+			// 测试报告持久化
+			if action == "test" && result.Report != nil {
 				saveTestReportToDisk(ciDir, result)
 			}
+			// 持久化步骤状态
+			saveStepStatus(ciDir, result)
+			return
 		}
+
+		// stdout 不是 JSON（可能脚本异常），返回 stderr 作为错误
+		errMsg := "脚本执行异常"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		if stderrStr != "" {
+			errMsg = stderrStr
+		}
+		// 持久化失败状态
+		saveStepStatus(ciDir, runner.Result{
+			Project:  project,
+			Action:   action,
+			Status:   "fail",
+			ErrorLog: errMsg,
+		})
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
 	}
 }
 
 // findPipelineStepCommand 从 projects.json 中查找指定项目的指定步骤的自定义命令
+
+// findProjectPath 从 projects.json 中查找指定项目名的实际路径
+func findProjectPath(ciDir, projectName string) string {
+	data, err := os.ReadFile(filepath.Join(ciDir, "projects.json"))
+	if err != nil {
+		return ""
+	}
+	var cfg struct {
+		Projects []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	for _, p := range cfg.Projects {
+		if p.Name == projectName {
+			return p.Path
+		}
+	}
+	return ""
+}
+
 func findPipelineStepCommand(ciDir, projectName, stepID string) (command, args string) {
 	data, err := os.ReadFile(filepath.Join(ciDir, "projects.json"))
 	if err != nil {
@@ -529,6 +600,23 @@ func findCiDir() string {
 	return ""
 }
 
+// buildCommandString 将命令名和参数拼接为人类可读的字符串（供前端日志展示）
+func buildCommandString(name string, args []string) string {
+	var b strings.Builder
+	b.WriteString(name)
+	for _, a := range args {
+		b.WriteString(" ")
+		if strings.ContainsAny(a, " &\"'") {
+			b.WriteString("\"")
+			b.WriteString(strings.ReplaceAll(a, "\"", "\\\""))
+			b.WriteString("\"")
+		} else {
+			b.WriteString(a)
+		}
+	}
+	return b.String()
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -759,4 +847,143 @@ func reportDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "报告已删除"})
+}
+
+
+func stepStatusDir(ciDir string) string {
+	return filepath.Join(ciDir, "status")
+}
+
+func saveStepStatus(ciDir string, result runner.Result) {
+	if result.Project == "" || result.Action == "" {
+		return
+	}
+	dir := filepath.Join(stepStatusDir(ciDir), result.Project)
+	os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, result.Action+".json")
+	data, _ := json.Marshal(result)
+	os.WriteFile(path, data, 0644)
+}
+
+type stepStatusFile struct {
+	Status   string `json:"status"`
+	ErrorLog string `json:"error_log,omitempty"`
+}
+
+func loadStepStatuses(ciDir string) map[string]map[string]stepStatusFile {
+	base := stepStatusDir(ciDir)
+	result := make(map[string]map[string]stepStatusFile)
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return result
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		project := entry.Name()
+		projectDir := filepath.Join(base, project)
+		stepFiles, _ := os.ReadDir(projectDir)
+		steps := make(map[string]stepStatusFile)
+		for _, sf := range stepFiles {
+			if sf.IsDir() || filepath.Ext(sf.Name()) != ".json" {
+				continue
+			}
+			action := strings.TrimSuffix(sf.Name(), ".json")
+			data, err := os.ReadFile(filepath.Join(projectDir, sf.Name()))
+			if err != nil {
+				continue
+			}
+			var s stepStatusFile
+			if json.Unmarshal(data, &s) == nil {
+				steps[action] = s
+			}
+		}
+		if len(steps) > 0 {
+			result[project] = steps
+		}
+	}
+	return result
+}
+
+func stepStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	ciDir := findCiDir()
+	if ciDir == "" {
+		json.NewEncoder(w).Encode(map[string]any{"error": "找不到 ci-cd 目录"})
+		return
+	}
+	statuses := loadStepStatuses(ciDir)
+	json.NewEncoder(w).Encode(map[string]any{"statuses": statuses})
+}
+
+func stepStatusClearHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	project := r.URL.Query().Get("project")
+	ciDir := findCiDir()
+	if ciDir == "" {
+		json.NewEncoder(w).Encode(map[string]any{"status": "error", "message": "找不到 ci-cd 目录"})
+		return
+	}
+	if project != "" {
+		dir := filepath.Join(stepStatusDir(ciDir), project)
+		os.RemoveAll(dir)
+	} else {
+		dir := stepStatusDir(ciDir)
+		os.RemoveAll(dir)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+}
+
+func deployHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	project := r.URL.Query().Get("project")
+	action := r.URL.Query().Get("action")
+	if action == "" {
+		action = "upload"
+	}
+	ciDir := findCiDir()
+	if ciDir == "" {
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
+		return
+	}
+	cmd := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass",
+		"-File", filepath.Join(ciDir, "cd-deploy.ps1"),
+		"-ProjectName", project,
+		"-Action", action,
+	)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	stdoutStr := strings.TrimSpace(stdout.String())
+	stderrStr := strings.TrimSpace(stderr.String())
+
+	detail := ""
+	if stderrStr != "" {
+		detail = stderrStr
+	} else if stdoutStr != "" {
+		detail = stdoutStr
+	} else if err != nil {
+		detail = err.Error()
+	}
+
+	if err == nil {
+		saveStepStatus(ciDir, runner.Result{
+			Project:  project,
+			Action:   "deploy",
+			Status:   "pass",
+			Duration: detail,
+		})
+		json.NewEncoder(w).Encode(map[string]string{"status": "pass", "message": "部署成功", "detail": detail})
+	} else {
+		saveStepStatus(ciDir, runner.Result{
+			Project:  project,
+			Action:   "deploy",
+			Status:   "fail",
+			ErrorLog: detail,
+		})
+		json.NewEncoder(w).Encode(map[string]string{"status": "fail", "message": "部署失败", "detail": detail})
+	}
 }

@@ -1,0 +1,1 @@
+{"project":"pair-backend","action":"check","status":"pass","duration":"5.0s","command":"powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action check -ProjectPath D:\\IDEA\\Project\\pair-backend -Json"}

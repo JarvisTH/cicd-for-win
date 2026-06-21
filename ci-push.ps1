@@ -1,4 +1,8 @@
-param([string]$ProjectName)
+﻿param([string]$ProjectName)
+
+# 设置输出编码为 UTF-8，避免中文乱码
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $configPath = Join-Path $PSScriptRoot "projects.json"
 $config = Get-Content $configPath -Raw | ConvertFrom-Json
@@ -13,12 +17,12 @@ foreach ($remote in $proj.remotes) {
     $existing = & "git.exe" remote -v 2>&1 | Where-Object { $_ -match "^$($remote.name)\s" }
     if (-not $existing) {
         & "git.exe" remote add $remote.name $remote.url 2>&1
-        Write-Host "  添加远程: $($remote.name) → $($remote.url)"
+        Write-Output "  添加远程: $($remote.name) → $($remote.url)"
     }
-    Write-Host "📤 推送到 $($remote.name)..."
+    Write-Output "📤 推送到 $($remote.name)..."
     $result = & "git.exe" push $remote.name main 2>&1
-    if ($LASTEXITCODE -eq 0) { Write-Host "  ✅ $($remote.name): 推送成功" }
-    else { Write-Host "  ❌ $($remote.name): 推送失败"; $allSuccess = $false }
+    if ($LASTEXITCODE -eq 0) { Write-Output "  ✅ $($remote.name): 推送成功" }
+    else { Write-Output "  ❌ $($remote.name): 推送失败"; $allSuccess = $false }
 }
 
 Pop-Location

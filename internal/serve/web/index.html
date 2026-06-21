@@ -46,32 +46,22 @@
   <div class="doctor-card" id="doctorCard" style="display:none"></div>
 
   <div class="stats" id="stats">
-    <div class="stat-card"><div class="num" id="totalCount">-</div><div class="label">项目</div></div>
-    <div class="stat-card"><div class="num" id="passCount">-</div><div class="label">通过</div></div>
-    <div class="stat-card"><div class="num" id="failCount">-</div><div class="label">失败</div></div>
-    <div class="stat-card"><div class="num" id="deployCount">-</div><div class="label">已部署</div></div>
-    <div class="stat-card"><div class="num" id="remoteCount">-</div><div class="label">远程仓库</div></div>
+    <div class="stat-card clickable" onclick="showStatDetail('total')" title="点击查看所有项目"><div class="num" id="totalCount">-</div><div class="label">项目</div></div>
+    <div class="stat-card clickable" onclick="showStatDetail('pass')" title="点击查看已通过的项目"><div class="num" id="passCount">-</div><div class="label">通过</div></div>
+    <div class="stat-card clickable" onclick="showStatDetail('fail')" title="点击查看失败的项目"><div class="num" id="failCount">-</div><div class="label">失败</div></div>
+    <div class="stat-card clickable" onclick="showStatDetail('deploy')" title="点击查看部署成功的项目"><div class="num" id="deployCount">-</div><div class="label">部署成功</div></div>
+    <div class="stat-card clickable" onclick="showStatDetail('remote')" title="点击查看远程仓库详情"><div class="num" id="remoteCount">-</div><div class="label">远程仓库</div></div>
   </div>
 
   <div class="toolbar">
     <div class="toolbar-group">
       <button class="btn-primary" onclick="runPipelineAll()">⏯ 运行流水线</button>
       <button class="btn-outline" id="autoToggle" onclick="toggleAutoPipeline()">🌐 自动:OFF</button>
-    </div>
-    <span class="toolbar-divider"></span>
-    <div class="toolbar-group">
-      <span class="toolbar-label">批量</span>
-      <button class="btn-outline" onclick="batchRun('check')">🔍 检查</button>
-      <button class="btn-outline" onclick="batchRun('build')">🔨 构建</button>
-      <button class="btn-outline" onclick="batchRun('test')">🧪 测试</button>
-      <button class="btn-outline" onclick="batchRun('push')">📤 推送</button>
-      <button class="btn-outline" onclick="batchRun('deploy')">🚀 部署</button>
+      <button class="btn-outline" id="concurrentToggle" onclick="toggleConcurrent()">⚡ 并发:OFF</button>
     </div>
     <span class="toolbar-divider"></span>
     <div class="toolbar-group">
       <button class="btn-outline" onclick="showAddDialog()">+ 添加项目</button>
-      <button class="btn-outline" onclick="showRulesHelp()">🔍 规则说明</button>
-      <button class="btn-outline" onclick="runDoctor()">🏥 诊断</button>
       <button class="btn-outline" onclick="refreshProjects()">🔄 刷新</button>
     </div>
   </div>
@@ -150,6 +140,13 @@
     </div>
     <!-- 右：终端 -->
     <div class="remote-right">
+      <!-- 命令广播栏 -->
+      <div class="broadcast-bar" id="broadcastBar" style="display:none">
+        <span class="bb-label">📡 广播</span>
+        <span class="bb-count" id="broadcastCount">0 台</span>
+        <input type="text" id="broadcastInput" placeholder="输入命令，同时发送到所有已连接服务器..." spellcheck="false">
+        <button class="bb-btn bb-send" id="broadcastSendBtn" onclick="sendBroadcast()" disabled>发送</button>
+      </div>
       <div id="terminal-container"><div style="padding:40px 20px;color:var(--text-tertiary);font-size:14px;text-align:center;line-height:2"><div style="font-size:32px;margin-bottom:12px;opacity:0.4">🖥️</div>选择服务器后点击「连接」<br><span style="font-size:12px;color:var(--text-quaternary)">支持同时连接多台服务器，通过标签页切换</span></div></div>
     </div>
   </div>
@@ -275,9 +272,17 @@
     <div class="form-group"><label>项目名称</label><input id="inputName" placeholder="pair-front"></div>
     <div class="form-group"><label>项目路径</label>
       <div style="display:flex;gap:8px">
-        <input id="inputPath" placeholder="D:\Idea\project\pair" style="flex:1;min-width:0">
+        <input id="inputPath" placeholder="D:\Idea\project\pair" style="flex:1;min-width:0" onblur="onPathChanged()">
         <button type="button" class="btn-outline" onclick="openPathBrowser()" style="font-size:12px;padding:6px 16px;white-space:nowrap">📁 浏览</button>
       </div>
+      <div class="help-text">💡 填写路径后自动检测项目类型、代码检查规则和 Git 远程仓库</div>
+    </div>
+    <div class="form-group"><label>Git 分支</label>
+      <div style="display:flex;gap:8px">
+        <select id="inputGitBranch" style="flex:1"><option value="">默认（当前分支）</option></select>
+        <button type="button" class="btn-outline" onclick="detectBranchesFromPath()" style="font-size:12px;padding:6px 16px;white-space:nowrap">🔄 刷新</button>
+      </div>
+      <div class="help-text">选择流水线操作的目标分支，留空则使用当前检出分支</div>
     </div>
 
     <div class="section-header" onclick="toggleSection('deploy')">
@@ -301,7 +306,10 @@
         </select>
       </div>
       <div class="form-group" id="keyPathGroup"><label>密钥路径</label><input id="inputKeyPath" placeholder="C:\Users\你的用户名\.ssh\id_ed25519">
-        <div class="help-text">💡 没有密钥？运行 <code>ssh-keygen -t ed25519</code> 生成。<br>密钥通常在 <code>~/.ssh/</code> 下，文件名 <code>id_ed25519</code> 或 <code>id_rsa</code>。</div>
+        <div class="help-text">💡 <b>没有密钥？</b>只需配置一次：
+        <br>1️⃣ 在<b>本机</b>运行 <code>ssh-keygen -t ed25519</code>（一路回车即可）
+        <br>2️⃣ 把<b>公钥</b>（<code>.pub</code> 文件）添加到服务器的 <code>~/.ssh/authorized_keys</code>
+        <br>3️⃣ 这里填<b>私钥</b>路径：<code>C:\Users\你的用户名\.ssh\id_ed25519</code></div>
       </div>
       <div class="form-group"><label>远程路径</label><input id="inputRemote" placeholder="/opt/pair-front"></div>
       <div style="display:flex;gap:8px;margin:8px 0">
@@ -316,7 +324,10 @@
     <div class="section-body collapsed" id="gitSection">
       <div class="help-text">同时推送到多个远程仓库，如 GitHub + Gitee。</div>
       <div id="remoteList" style="margin-top:8px"></div>
-      <button class="btn-outline" style="font-size:12px;padding:4px 12px;margin-top:6px" onclick="addRemoteRow()">+ 添加远程</button>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn-outline" style="font-size:12px;padding:4px 12px" onclick="addRemoteRow()">+ 添加远程</button>
+        <button class="btn-outline" style="font-size:12px;padding:4px 12px" onclick="detectRemotesFromPath()">🔍 从 Git 检测</button>
+      </div>
     </div>
 
     <div class="section-header" onclick="toggleSection('rules')">

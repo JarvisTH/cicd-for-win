@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -137,4 +138,141 @@ func listWindowsDrives() []string {
 		}
 	}
 	return drives
+}
+
+// handleProjectDetect 检测指定路径的项目类型和 Git 远程仓库。
+//
+//	GET /api/project/detect?path=xxx
+//
+// 返回 {type, isGit, remotes:[{name,url}]}，供前端在用户填写路径后自动展示可用的检查规则和导入远程仓库。
+func handleProjectDetect(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		json.NewEncoder(w).Encode(map[string]any{"error": "缺少 path 参数"})
+		return
+	}
+	fi, err := os.Stat(path)
+	if err != nil || !fi.IsDir() {
+		json.NewEncoder(w).Encode(map[string]any{"error": "路径不存在或不是目录"})
+		return
+	}
+	remotes, isGit := detectGitRemotes(path)
+	branches, currentBranch := detectGitBranches(path)
+	json.NewEncoder(w).Encode(map[string]any{
+		"type":          detectProjectType(path),
+		"isGit":         isGit,
+		"remotes":       remotes,
+		"branches":      branches,
+		"currentBranch": currentBranch,
+	})
+}
+
+// detectProjectType 检测项目类型，逻辑与 ci-runner.ps1 的 Get-ProjectType 保持一致。
+func detectProjectType(path string) string {
+	// package.json → 前端项目
+	pkgFile := filepath.Join(path, "package.json")
+	if data, err := os.ReadFile(pkgFile); err == nil {
+		var pkg struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		_ = json.Unmarshal(data, &pkg)
+		hasDep := func(name string) bool {
+			_, ok1 := pkg.Dependencies[name]
+			_, ok2 := pkg.DevDependencies[name]
+			return ok1 || ok2
+		}
+		if hasDep("react") {
+			return "React"
+		}
+		if hasDep("vue") || hasDep("vue-router") {
+			return "Vue"
+		}
+		if hasDep("@angular/core") {
+			return "Angular"
+		}
+		if hasDep("next") {
+			return "Next"
+		}
+		return "Node"
+	}
+	// pom.xml → Maven
+	pomFile := filepath.Join(path, "pom.xml")
+	if data, err := os.ReadFile(pomFile); err == nil {
+		content := string(data)
+		if strings.Contains(content, "<modules>") || strings.Contains(content, "<packaging>pom</packaging>") {
+			return "MavenMulti"
+		}
+		return "Maven"
+	}
+	if fileExists(filepath.Join(path, "build.gradle")) {
+		return "Gradle"
+	}
+	if fileExists(filepath.Join(path, "Cargo.toml")) {
+		return "Rust"
+	}
+	if fileExists(filepath.Join(path, "go.mod")) {
+		return "Go"
+	}
+	return "Unknown"
+}
+
+// detectGitRemotes 执行 git remote -v 并解析为 [{name, url}] 列表（按 name 去重，取 fetch URL）。
+// 第二个返回值表示该路径是否为 Git 仓库。
+func detectGitRemotes(path string) ([]map[string]string, bool) {
+	cmd := exec.Command("git.exe", "-C", path, "remote", "-v")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, false // 非 Git 仓库或 git 不可用
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	seen := map[string]bool{}
+	var remotes []map[string]string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[0]
+		url := fields[1]
+		// git remote -v 每个远程输出两行（fetch + push），只取 fetch 行并按 name 去重
+		if len(fields) >= 3 && fields[2] == "(fetch)" {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			remotes = append(remotes, map[string]string{"name": name, "url": url})
+		}
+	}
+	return remotes, true
+}
+
+// detectGitBranches 执行 git branch 列出所有本地分支及当前分支。
+func detectGitBranches(path string) ([]string, string) {
+	cmd := exec.Command("git.exe", "-C", path, "branch", "--list")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, ""
+	}
+	var branches []string
+	currentBranch := ""
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 当前分支前有 * 标记
+		if strings.HasPrefix(line, "* ") {
+			currentBranch = strings.TrimPrefix(line, "* ")
+			branches = append(branches, currentBranch)
+		} else {
+			branches = append(branches, line)
+		}
+	}
+	return branches, currentBranch
 }

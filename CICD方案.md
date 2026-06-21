@@ -387,6 +387,33 @@ ci.exe serve
 | Maven | `mvn compile -Xlint:all` + `mvn checkstyle:check` | `mvn clean package -DskipTests` | `mvn test -Dmaven.test.failure.ignore=true` |
 | MavenMulti | 父目录执行 `mvn compile` | `mvn clean install -DskipTests` | 遍历子模块 Surefire |
 
+### 7.3 代码检查规则开关
+
+check 阶段支持按单条规则单独启用/禁用，配置保存在 `projects.json` 的 `rules` 字段：
+
+```json
+{
+  "name": "pair-front",
+  "path": "D:/project/pair-front",
+  "rules": [
+    {"id": "tsc", "enabled": true},
+    {"id": "eslint", "enabled": false}
+  ]
+}
+```
+
+| 规则 ID | 适用类型 | 说明 |
+|---------|---------|------|
+| `tsc` | React / Vue | TypeScript / vue-tsc 类型检查 |
+| `eslint` | React / Vue / Node | ESLint 代码规范检查 |
+| `compile` | Maven / MavenMulti | Maven 编译检查 |
+| `checkstyle` | Maven | Checkstyle 代码风格检查 |
+
+- **持久化**：Web UI 编辑项目时勾选/取消的规则状态自动保存到 `projects.json`
+- **执行联动**：`ci check` / Web UI 检查按钮执行时，被禁用的规则自动跳过并输出 `⊘ 跳过 xxx（已禁用）` 提示
+- **向后兼容**：未配置 `rules` 字段的项目，所有规则默认全部启用
+- **配置方式**：Web UI 项目编辑 → 代码检查规则区域勾选；规则文件内容自定义见 `rules/` 目录
+
 ---
 
 ## 八、部署引擎（cd-deploy.ps1）
@@ -417,6 +444,55 @@ ci.exe serve
   "auth_type": "key"
 }
 ```
+
+### 8.3.1 SSH 密钥配置指南
+
+> 首次部署前，需要配置 SSH 密钥认证。整个过程只需执行一次。
+> **核心原则：密钥在本机生成，私钥留在本机，公钥放到服务器。**
+
+#### 第一步：在本机生成密钥对
+
+在**运行 ci.exe 的本机**上打开终端（PowerShell / CMD），执行：
+
+```bash
+ssh-keygen -t ed25519 -C "ci-cd-deploy"
+```
+
+- 按提示选择保存路径，默认 `C:\Users\你的用户名\.ssh\id_ed25519`
+- 可以直接回车使用默认路径，passphrase 留空即可
+- 这会在本机 `~/.ssh/` 下生成两个文件：
+  - `id_ed25519` — **私钥**（留在本机，不要外传）
+  - `id_ed25519.pub` — **公钥**（需要复制到服务器）
+
+#### 第二步：把公钥复制到服务器
+
+将本机公钥内容追加到**服务器**的 `~/.ssh/authorized_keys` 文件中。
+
+**方法一：手动复制（推荐）**
+1. 在本机查看公钥内容：`type C:\Users\你的用户名\.ssh\id_ed25519.pub`
+2. 登录到服务器，执行：
+   ```bash
+   mkdir -p ~/.ssh && chmod 700 ~/.ssh
+   echo "粘贴的公钥内容" >> ~/.ssh/authorized_keys
+   chmod 600 ~/.ssh/authorized_keys
+   ```
+
+**方法二：使用 ssh-copy-id（Linux/Mac 本机）**
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub deploy@192.168.1.10
+```
+
+#### 第三步：在 Web UI 或 CLI 中配置私钥路径
+
+- **Web UI**：项目编辑 → 部署配置 → 密钥路径填：`C:\Users\你的用户名\.ssh\id_ed25519`
+- **CLI**：`ci deploy --key-path C:\Users\你的用户名\.ssh\id_ed25519`
+
+#### 密钥放置位置总结
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| 私钥 `id_ed25519` | **本机** `C:\Users\用户名\.ssh\` | ci.exe 从这里读取，用于 SSH 认证 |
+| 公钥 `id_ed25519.pub` | **服务器** `~/.ssh/authorized_keys` | 服务器用来验证本机身份 |
 
 ---
 
@@ -654,6 +730,7 @@ $ ci doctor
 | 测试报告 | `reports/{project}/test-*.json` | 自动生成 + Web UI 可删 / CLI `report` | JSON |
 | 审计日志 | `logs/audit-YYYY-MM-DD.jsonl` | 自动写入（前端 log()）+ Web UI/CLI 查删 | JSONL |
 | 代码规则 | `rules/` | 手动编辑 + CLI `rules list/view` | xml/mjs |
+| 规则开关 | `projects.json` 的 `rules` 字段 | Web UI 项目编辑勾选 | JSON |
 | Git hooks | `hooks/` | 手动编辑 | batch |
 | Web 前端 | `web/` | 内嵌（index.html + app.css + app.js） | HTML/CSS/JS |
 

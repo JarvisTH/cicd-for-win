@@ -13,12 +13,14 @@ import (
 )
 
 type Result struct {
-	Project  string `json:"project"`
-	Action   string `json:"action"`
-	Status   string `json:"status"`
-	Duration string `json:"duration"`
-	Steps    []Step `json:"steps,omitempty"`
-	Report   *TestReport `json:"report,omitempty"`
+	Project   string       `json:"project"`
+	Action    string       `json:"action"`
+	Status    string       `json:"status"`
+	Duration  string       `json:"duration"`
+	Command   string       `json:"command,omitempty"`   // 实际执行的命令（供前端日志展示）
+	ErrorLog  string       `json:"error_log,omitempty"`
+	Steps     []Step       `json:"steps,omitempty"`
+	Report    *TestReport  `json:"report,omitempty"`
 }
 
 type Step struct {

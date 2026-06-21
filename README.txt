@@ -72,6 +72,16 @@ ci deploy pair-front                # 部署到生产环境
 2. 在浏览器中添加项目
 3. 点击「检查」「构建」「部署」运行流水线
 
+### 首次部署前：配置 SSH 密钥
+
+部署功能需要 SSH 密钥认证，只需配置一次：
+
+1. **本机生成密钥**：终端运行 `ssh-keygen -t ed25519`（一路回车）
+2. **公钥上传服务器**：把 `~/.ssh/id_ed25519.pub` 的内容追加到服务器的 `~/.ssh/authorized_keys`
+3. **Web UI 填写私钥路径**：部署配置 → 密钥路径填 `C:\Users\你的用户名\.ssh\id_ed25519`
+
+> 详细说明见 CICD方案.md 8.3.1 节。
+
 ## 环境要求
 
 - Windows 10/11（PowerShell 5.1+）
@@ -126,7 +136,17 @@ copy my-rules.xml rules/custom/
 在 Web UI 中编辑项目时，可以：
 
 1. **查看适用规则** — 系统根据项目类型自动显示对应的规则文件
-2. **启用/禁用** — 勾选需要执行的检查项
-3. **自定义规则路径** — 为特定项目指定独立的规则文件
+2. **单独启用/禁用** — 勾选需要执行的检查项，取消勾选的规则在执行检查时自动跳过
 
-> 规则修改后对所有项目生效。如需为单个项目设置不同规则，可在项目编辑中指定自定义规则路径。
+> 规则开关状态保存在 `projects.json` 的 `rules` 字段（如 `"rules":[{"id":"eslint","enabled":false}]`），按项目独立配置。
+> 未配置时所有规则默认启用，保持向后兼容。
+> 规则文件本身修改后对所有项目生效；如需对单个项目关闭某条规则，用 Web UI 的勾选框控制。
+
+各项目类型可控制的规则 ID：
+
+| 项目类型 | 可控规则 ID | 说明 |
+|---------|-----------|------|
+| React | `tsc` / `eslint` | TypeScript 类型检查 / ESLint |
+| Vue | `tsc` / `eslint` | vue-tsc 类型检查 / ESLint（rules/eslint-vue.mjs） |
+| Maven | `compile` / `checkstyle` | Maven 编译检查 / Checkstyle（rules/checkstyle.xml） |
+| MavenMulti | `compile` | 多模块编译检查 |

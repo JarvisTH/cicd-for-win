@@ -1,6 +1,8 @@
 let projects = [];
 let remoteCount = 0;
 let autoPipeline = false;
+let concurrentPipeline = false;
+let runningCount = 0; // 当前正在执行的操作数（并发时正确显示状态文本）
 const stepIcons = {pass:'✅',fail:'❌',running:'⏳',pending:'⚪'};
 const defaultStepOrder = ['check','build','test','push','deploy'];
 const stepLabels = {check:'检查',build:'构建',test:'测试',push:'推送',deploy:'部署'};
@@ -11,12 +13,54 @@ const stepDescs = {
   push: '推送代码到 Git 远程仓库',
   deploy: '部署到远程服务器（SFTP + 启动）'
 };
-const stepDefaultCmds = {
-  check: '自动检测: npx tsc --noEmit / npx eslint / mvn compile',
-  build: '自动检测: npm run build / mvn clean package -DskipTests',
-  test: '自动检测: npx jest --json / npx vitest run / mvn test',
-  push: 'git push（推送到所有已配置的远程仓库）',
-  deploy: 'SFTP 上传构建产物到远程服务器并重启服务'
+const stepDefaults = {
+  check: {
+    desc: '代码检查（类型检查 + Lint）',
+    items: [
+      { type: 'React', command: 'npx tsc --noEmit', args: '' },
+      { type: 'React', command: 'npx eslint', args: 'src/' },
+      { type: 'Vue', command: 'npx vue-tsc --noEmit', args: '' },
+      { type: 'Vue', command: 'npx eslint', args: '-c rules/eslint-vue.mjs src/' },
+      { type: 'Maven', command: 'mvn compile', args: '-Xlint:all' },
+      { type: 'Maven', command: 'mvn checkstyle:check', args: '-Dcheckstyle.config=rules/checkstyle.xml' },
+      { type: 'MavenMulti', command: 'mvn compile', args: '-Xlint:all' },
+    ],
+    note: '按项目类型自动选择，多条命令顺序执行'
+  },
+  build: {
+    desc: '编译构建',
+    items: [
+      { type: 'React/Vue', command: 'npm run build', args: '' },
+      { type: 'Maven', command: 'mvn clean package', args: '-DskipTests' },
+      { type: 'MavenMulti', command: 'mvn clean install', args: '-DskipTests' },
+    ],
+    note: ''
+  },
+  test: {
+    desc: '单元测试',
+    items: [
+      { type: 'React/Vue (Vitest)', command: 'npx vitest run', args: '--reporter=json' },
+      { type: 'React/Vue (Jest)', command: 'npx jest', args: '--json --coverage' },
+      { type: 'Maven/MavenMulti', command: 'mvn test', args: '-Dmaven.test.failure.ignore=true' },
+    ],
+    note: '自动检测测试框架并解析报告（含覆盖率）'
+  },
+  push: {
+    desc: 'Git 推送',
+    items: [
+      { type: '通用', command: 'git push', args: '--all' },
+    ],
+    note: '推送到所有已启用的远程仓库'
+  },
+  deploy: {
+    desc: '部署',
+    items: [
+      { type: 'React/Vue', command: 'SFTP 上传 dist/', args: '→ $remote_dir/' },
+      { type: 'Maven', command: 'SFTP 上传 target/*.jar', args: '→ $remote_dir/' },
+      { type: 'MavenMulti', command: 'SFTP 上传各子模块 jar', args: '→ $remote_dir/services/' },
+    ],
+    note: '上传后远程执行启动/重启命令'
+  },
 };
 
 // 获取项目的流水线步骤（按配置顺序，仅启用的）
@@ -49,7 +93,18 @@ function toggleAutoPipeline() {
   else btn.classList.remove('auto-on');
   log(`🌐 自动流水线: ${autoPipeline ? '已开启' : '已关闭'}`, 'info');
 }
+
+function toggleConcurrent() {
+  concurrentPipeline = !concurrentPipeline;
+  const btn = document.getElementById('concurrentToggle');
+  btn.textContent = concurrentPipeline ? '⚡ 并发:ON' : '⚡ 并发:OFF';
+  if (concurrentPipeline) btn.classList.add('auto-on');
+  else btn.classList.remove('auto-on');
+  log(`⚡ 并发执行: ${concurrentPipeline ? '已开启（多项目同时执行）' : '已关闭（项目逐个执行）'}`, 'info');
+}
 if (!window._stepStatus) window._stepStatus = {};
+// 存储每个失败步骤的错误详情（key: "projectName:stepId"，value: { error_log, error, duration }）
+if (!window._stepErrors) window._stepErrors = {};
 const ruleDefs = {
   React:   [{id:'tsc', label:'TypeScript 类型检查', cmd:'npx tsc --noEmit', file:'内置（使用项目 tsconfig.json）', def:true, desc:'检查 TypeScript 类型错误，使用项目自身的 tsconfig 配置'}],
   Vue:     [{id:'tsc', label:'vue-tsc 类型检查', cmd:'npx vue-tsc --noEmit', file:'内置（使用项目 tsconfig.json）', def:true, desc:'Vue 项目的 TypeScript 类型检查，支持 .vue 文件'},
@@ -83,8 +138,49 @@ function renderStepper(p) {
     if (disabled) {
       return `<span class="step-item pending" style="opacity:0.35;text-decoration:line-through" title="已禁用">⊘ ${stepLabels[s]}</span>`;
     }
+    // 失败步骤可点击查看错误详情
+    if (st === 'fail') {
+      const projName = (p.name || p).replace(/'/g, "\\'");
+      return `<span class="step-item fail clickable" onclick="showStepError('${projName}','${s}')" title="点击查看错误详情">${stepIcons[st]} ${stepLabels[s]}</span>`;
+    }
     return `<span class="step-item ${st}">${stepIcons[st]} ${stepLabels[s]}</span>`;
   }).join('<span class="step-arrow">→</span>');
+}
+
+// showStepError 弹出指定项目指定步骤的错误详情
+function showStepError(project, step) {
+  const key = project + ':' + step;
+  const err = window._stepErrors[key];
+  const modal = document.getElementById('reportModal');
+  if (!err || (!err.error_log && !err.error)) {
+    modal.innerHTML = `<div class="modal-content" style="width:600px;max-width:90vw">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">❌ ${stepLabels[step] || step} - 错误详情</h2>
+        <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+      </div>
+      <div style="padding:20px;text-align:center;color:var(--text-tertiary)">未找到错误详情。可能该步骤的错误信息已丢失，请重新执行后重试。</div>
+    </div>`;
+    modal.classList.add('active');
+    return;
+  }
+  const errLog = err.error_log || err.error || '';
+  const errLines = errLog.split('\n').filter(l => l.trim());
+  const isShortErr = !err.error_log && err.error; // 只有简短 error 字段
+  let bodyHtml;
+  if (isShortErr) {
+    bodyHtml = `<div style="padding:12px 16px;background:var(--danger-subtle);border-radius:var(--r-sm);color:var(--danger);font-size:13px;line-height:1.6">${err.error}</div>`;
+  } else {
+    bodyHtml = `<pre class="error-log-pre">${errLines.map(l => l.replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('\n')}</pre>`;
+  }
+  modal.innerHTML = `<div class="modal-content" style="width:800px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">❌ ${stepLabels[step] || step} - 错误详情</h2>
+      <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">项目: <strong style="color:var(--text-primary)">${project}</strong> · 耗时: <strong style="color:var(--text-primary)">${err.duration}</strong> · 共 ${errLines.length} 行</div>
+    ${bodyHtml}
+  </div>`;
+  modal.classList.add('active');
 }
 
 // 生成流水线概览文本（如 "检查 → 构建 → 部署"）
@@ -100,11 +196,26 @@ function renderPipelineSummary(p) {
   return `<span style="color:var(--text-tertiary);font-size:11px">${summary}</span>`;
 }
 
-function renderRules(path) {
+function renderRules(project, typeOverride) {
   const el = document.getElementById('rulesList');
-  let type = 'Unknown';
-  const matched = projects.find(p => p.path === path);
-  if (matched && matched.type) type = matched.type;
+  let type = typeOverride || 'Unknown';
+  // 已保存的规则开关（id -> enabled）
+  const savedRules = {};
+  let path = '';
+  if (project && typeof project === 'object') {
+    path = project.path || '';
+    if (project.rules && Array.isArray(project.rules)) {
+      project.rules.forEach(r => { savedRules[r.id] = r.enabled; });
+    }
+  } else if (typeof project === 'string') {
+    // 兼容旧调用：传入 path 字符串
+    path = project;
+  }
+  // 无 typeOverride 时尝试从已加载项目列表获取
+  if (!typeOverride && path) {
+    const matched = projects.find(p => p.path === path);
+    if (matched && matched.type) type = matched.type;
+  }
 
   const rules = ruleDefs[type] || [];
 
@@ -125,10 +236,13 @@ function renderRules(path) {
   }
 
   rules.forEach(r => {
-    const checked = r.def ? 'checked' : '';
+    // 已保存则用保存值，否则用默认值(def)
+    let checked = r.def;
+    if (savedRules.hasOwnProperty(r.id)) checked = savedRules[r.id];
+    const checkedAttr = checked ? 'checked' : '';
     const hasRuleFile = r.file && r.file.startsWith('rules/');
     html += `<div class="rule-item">
-      <input type="checkbox" class="rule-cb" data-id="${r.id}" ${checked}>
+      <input type="checkbox" class="rule-cb" data-id="${r.id}" ${checkedAttr}>
       <div class="rule-content">
         <div class="rule-label">${r.label}</div>
         <div class="rule-cmd">$ ${r.cmd}</div>
@@ -179,6 +293,29 @@ async function viewRuleFile(filePath) {
 
 // ===== 流水线配置 UI =====
 let pipelineEditingSteps = []; // 编辑中的步骤数据
+let currentEditProjectType = 'Unknown'; // 当前编辑项目的类型（由路径检测填充）
+
+// getDefaultCmdForStep 根据项目类型匹配步骤的默认命令和参数
+// 处理 stepDefaults 中的组合类型（如 "React/Vue"、"Maven/MavenMulti"、"通用"）
+// 返回 { command, args, matchedType } 或 null
+function getDefaultCmdForStep(stepId, projectType) {
+  const def = stepDefaults[stepId];
+  if (!def || !def.items) return null;
+  // 1. 精确匹配
+  for (const it of def.items) {
+    if (it.type === projectType) return { command: it.command, args: it.args, matchedType: it.type };
+  }
+  // 2. 组合类型匹配（如 "React/Vue" 包含 projectType）
+  for (const it of def.items) {
+    const types = it.type.split('/').map(t => t.split(' ')[0].trim()); // 拆 "React/Vue (Vitest)" → ["React","Vue"]
+    if (types.includes(projectType)) return { command: it.command, args: it.args, matchedType: it.type };
+  }
+  // 3. 通用匹配
+  for (const it of def.items) {
+    if (it.type === '通用') return { command: it.command, args: it.args, matchedType: it.type };
+  }
+  return null;
+}
 
 function renderPipelineConfig(project) {
   // 初始化编辑数据：从项目配置或默认值
@@ -216,18 +353,36 @@ function renderPipelineSteps() {
         <span class="step-label">${stepLabels[step.id] || step.id}</span>
         ${hasCustomCmd ? '<span style="font-size:9px;color:var(--warning);font-weight:700;padding:1px 5px;background:var(--warning-subtle);border-radius:9999px">自定义</span>' : ''}
         <button class="expand-btn" onclick="toggleStepExpand(${index})">${hasCustomCmd ? '编辑' : '高级'} ▾</button>
-        <div class="step-toggle" onclick="togglePipelineStep(${index})" title="${step.enabled ? '点击禁用' : '点击启用'}"></div>
+        <button class="step-toggle-btn ${step.enabled ? 'enabled' : 'disabled'}" onclick="togglePipelineStep(${index})" title="${step.enabled ? '点击禁用此步骤' : '点击启用此步骤'}">${step.enabled ? '✅ 启用' : '⏸ 禁用'}</button>
       </div>
       <div class="step-body">
-        <div style="font-size:10px;color:var(--text-quaternary);line-height:1.5">默认: ${stepDefaultCmds[step.id] || ''}</div>
+        <div class="step-defaults">
+          <div class="step-defaults-title">📋 默认命令（留空时自动执行）${currentEditProjectType !== 'Unknown' ? ` · 当前类型: <span style="color:var(--accent)">${currentEditProjectType}</span>` : ''}</div>
+          <table class="defaults-table">
+            <thead><tr><th style="width:90px">项目类型</th><th>默认命令</th><th style="width:35%">默认参数</th></tr></thead>
+            <tbody>${(stepDefaults[step.id] && stepDefaults[step.id].items || []).map(it => {
+              // 判断该行是否匹配当前项目类型
+              const types = it.type.split('/').map(t => t.split(' ')[0].trim());
+              const isActive = currentEditProjectType !== 'Unknown' && (it.type === currentEditProjectType || types.includes(currentEditProjectType) || it.type === '通用');
+              return `<tr class="${isActive ? 'active-row' : ''}"><td>${it.type}</td><td><code>${it.command}</code></td><td><code>${it.args || '—'}</code></td></tr>`;
+            }).join('')}</tbody>
+          </table>
+          ${stepDefaults[step.id] && stepDefaults[step.id].note ? `<div class="step-defaults-note">💡 ${stepDefaults[step.id].note}</div>` : ''}
+        </div>
+        ${(() => {
+          const def = getDefaultCmdForStep(step.id, currentEditProjectType);
+          const cmdPh = def ? `留空使用: ${def.command}` : '留空使用上方默认命令';
+          const argsPh = def ? (def.args ? `留空使用: ${def.args}` : '无默认参数') : '留空使用上方默认参数';
+          return `
         <div class="cmd-row">
           <label>命令</label>
-          <input type="text" placeholder="留空使用默认命令（如: npm run build）" value="${step.command || ''}" oninput="updateStepCommand(${index}, this.value)">
+          <input type="text" placeholder="${cmdPh}" value="${step.command || ''}" oninput="updateStepCommand(${index}, this.value)">
         </div>
         <div class="cmd-row">
           <label>参数</label>
-          <input type="text" placeholder="额外参数（如: --mode production）" value="${step.args || ''}" oninput="updateStepArgs(${index}, this.value)">
-        </div>
+          <input type="text" placeholder="${argsPh}" value="${step.args || ''}" oninput="updateStepArgs(${index}, this.value)">
+        </div>`;
+        })()}
       </div>
     `;
     // 拖拽事件
@@ -397,7 +552,8 @@ async function runDoctor() {
   log('✅ 环境诊断完成', 'info');
 }
 
-// ===== 检查规则说明弹窗 =====
+// ===== 批量操作（未被按钮引用，保留作为 API 入口） =====
+// 当前界面已移除批量按钮，但 batchRun 仍可通过控制台调用
 function showRulesHelp() {
   const modal = document.getElementById('reportModal');
   const typeRules = Object.entries(ruleDefs).filter(([t, rs]) => rs.length > 0);
@@ -448,6 +604,24 @@ function showRulesHelp() {
 async function refreshProjects() {
   const data = await api('/api/projects');
   projects = data?.projects || [];
+  // 从服务器恢复持久化的步骤状态
+  try {
+    const stData = await api('/api/steps/status');
+    if (stData && stData.statuses) {
+      if (!window._stepStatus) window._stepStatus = {};
+      for (const [proj, steps] of Object.entries(stData.statuses)) {
+        for (const [stepId, info] of Object.entries(steps)) {
+          if (info.status === 'pass' || info.status === 'fail') {
+            window._stepStatus[proj + ':' + stepId] = info.status;
+            if (info.status === 'fail') {
+              if (!window._stepErrors) window._stepErrors = {};
+              window._stepErrors[proj + ':' + stepId] = { error_log: info.error_log || '', error: '' };
+            }
+          }
+        }
+      }
+    }
+  } catch(e) { /* 忽略，旧服务可能没有该端点 */ }
   const welcome = document.getElementById('welcomeCard');
   welcome.style.display = projects.length === 0 ? 'block' : 'none';
   remoteCount = 0;
@@ -455,14 +629,119 @@ async function refreshProjects() {
   renderProjects();
 }
 
+// getProjectStatus 从步骤状态推导项目整体状态
+function getProjectStatus(p) {
+  const allSteps = getProjectAllSteps(p);
+  const stepStatuses = allSteps.map(s => getStep(p, s));
+  if (stepStatuses.some(st => st === 'fail')) return 'fail';
+  if (stepStatuses.some(st => st === 'running')) return 'running';
+  if (stepStatuses.every(st => st === 'pass')) return 'pass';
+  return 'pending';
+}
+
+// showStatDetail 点击统计卡弹出对应详情
+function showStatDetail(type) {
+  const modal = document.getElementById('reportModal');
+  let title = '', items = [];
+
+  if (type === 'total') {
+    title = '📋 所有项目';
+    items = projects.map(p => ({
+      name: p.name,
+      type: p.type || '未知',
+      status: getProjectStatus(p),
+      detail: `${p.version || '-'} · ${p.git_branch || '-'}`
+    }));
+  } else if (type === 'pass') {
+    title = '✅ 已通过的项目';
+    items = projects.filter(p => getProjectStatus(p) === 'pass').map(p => ({
+      name: p.name, type: p.type || '未知', status: 'pass',
+      detail: p.version || '-'
+    }));
+  } else if (type === 'fail') {
+    title = '❌ 失败的项目';
+    items = projects.filter(p => getProjectStatus(p) === 'fail').map(p => {
+      // 查找失败的步骤
+      const failedSteps = defaultStepOrder.filter(s => getStep(p, s) === 'fail');
+      return {
+        name: p.name, type: p.type || '未知', status: 'fail',
+        detail: '失败步骤: ' + (failedSteps.map(s => stepLabels[s]).join(', ') || '未知'),
+        clickable: true, projectName: p.name
+      };
+    });
+  } else if (type === 'deploy') {
+    title = '🚀 部署成功的项目';
+    items = projects.filter(p => getStep(p, 'deploy') === 'pass').map(p => ({
+      name: p.name, type: p.type || '未知', status: 'pass',
+      detail: p.deploy ? `${p.deploy.user}@${p.deploy.host}:${p.deploy.port} → ${p.deploy.remote_dir || '/'}` : '已部署'
+    }));
+  } else if (type === 'remote') {
+    title = '📤 远程仓库详情';
+    projects.forEach(p => {
+      if (p.remotes && p.remotes.length > 0) {
+        p.remotes.filter(r => r.enabled !== false).forEach(r => {
+          items.push({
+            name: p.name, type: r.name, status: r.enabled !== false ? 'pass' : 'pending',
+            detail: r.url
+          });
+        });
+      }
+    });
+  }
+
+  if (items.length === 0) {
+    modal.innerHTML = `<div class="modal-content" style="width:500px;max-width:90vw">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">${title}</h2>
+        <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+      </div>
+      <div style="padding:30px;text-align:center;color:var(--text-tertiary)">暂无数据</div>
+    </div>`;
+    modal.classList.add('active');
+    return;
+  }
+
+  const rowsHtml = items.map(it => {
+    const stIcon = it.status === 'pass' ? '✅' : it.status === 'fail' ? '❌' : '⚪';
+    const tagClass = (it.type||'').toLowerCase();
+    const clickAttr = it.clickable ? `onclick="showStepError('${it.projectName}','${defaultStepOrder.find(s => getStep(projects.find(p=>p.name===it.projectName), s) === 'fail')}')"` : '';
+    const cursorStyle = it.clickable ? 'cursor:pointer' : '';
+    return `<tr style="${cursorStyle}" ${clickAttr}>
+      <td><strong>${it.name}</strong></td>
+      <td><span class="tag tag-${tagClass}">${it.type}</span></td>
+      <td>${stIcon}</td>
+      <td style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono)">${it.detail}</td>
+    </tr>`;
+  }).join('');
+
+  modal.innerHTML = `<div class="modal-content" style="width:750px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">${title} <span style="font-size:13px;color:var(--text-tertiary);font-weight:400">(${items.length})</span></h2>
+      <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+    </div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead><tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary)">项目</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary);width:90px">类型</th>
+        <th style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary);width:40px">状态</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary)">详情</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>`;
+  modal.classList.add('active');
+}
+
 function renderProjects() {
   const tbody = document.getElementById('projectBody');
   let pass = 0, fail = 0, deployed = 0;
   tbody.innerHTML = '';
   projects.forEach(p => {
-    const s = p.status || 'pending';
+    // 从步骤状态推导项目整体状态
+    const s = getProjectStatus(p);
     if (s === 'pass') pass++; else if (s === 'fail') fail++;
-    if (p.deploy?.host) deployed++;
+    // 统计 deploy 步骤执行成功的项目（而非仅配置了部署的项目）
+    if (getStep(p, 'deploy') === 'pass') deployed++;
     const tt = (p.type||'unknown').toLowerCase();
     const configWarn = (!p.deploy || !p.deploy.host) ? '<span style="color:var(--warning);font-size:11px">⚠ 未配置部署</span>' : '<span style="color:var(--success);font-size:11px">✅ 已配置</span>';
 
@@ -477,7 +756,7 @@ function renderProjects() {
       <td><span class="tag tag-${tt}">${p.type||'未知'}</span></td>
       <td style="font-size:12px;font-family:var(--font-mono);color:var(--text-secondary)">${p.version || '-'}</td>
       <td style="font-size:11px;color:var(--text-tertiary)">${p.git_branch || '-'}${p.git_commit ? '<br><code style="font-size:10px;background:var(--bg-elevated);padding:1px 5px;border-radius:var(--r-xs);font-family:var(--font-mono);color:var(--accent-hover)">'+p.git_commit.substring(0,7)+'</code>' : ''}</td>
-      <td><span class="status status-${s}"><span class="status-dot"></span>${s === 'pass' ? '通过' : s === 'fail' ? '失败' : '等待'}</span></td>
+      <td><span class="status status-${s}"><span class="status-dot"></span>${s === 'pass' ? '通过' : s === 'fail' ? '失败' : s === 'running' ? '运行中' : '等待'}</span></td>
       <td>
         ${configWarn}
         ${p.remotes && p.remotes.length > 0 ? '<span style="color:var(--purple);font-size:11px">📤 ' + p.remotes.filter(r=>r.enabled!==false).map(r=>r.name).join(', ') + '</span>' : '<span style="color:var(--text-quaternary);font-size:11px">无远程仓库</span>'}
@@ -536,17 +815,34 @@ async function runAction(action, project) {
       log(`❌ [${project}] 未配置部署信息，请先编辑项目`, 'error');
       log(`💡 点击 [编辑] 填写主机地址和远程路径`, 'info');
       setStep(p, action, 'pending');
+      renderProjects();
       return;
     }
   }
 
-  log(`[${project}] ${action}...`);
-  document.getElementById('statusText').textContent = `${action} ${project}...`;
+  runningCount++;
+  // 输出执行的命令到日志（从默认描述或后端返回的真实命令中获取）
+  const stepInfo = stepDefaults[action];
+  if (stepInfo && stepInfo.items && stepInfo.items.length > 0) {
+    const cmds = stepInfo.items.map(i => `${i.command} ${i.args}`.trim());
+    log(`⚙️ [${project}] ${stepLabels[action]}: ${cmds.join(' | ')}`, 'info');
+  } else {
+    log(`[${project}] ${action}...`);
+  }
+  document.getElementById('statusText').textContent = runningCount > 1 ? `正在执行 ${runningCount} 个操作...` : `${action} ${project}...`;
   const data = await api(`/api/${action}?project=${encodeURIComponent(project)}`);
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
   if (data && data.status === 'pass') {
     setStep(p, action, 'pass');
+    // 如果后端返回了实际执行的命令，展示到日志
+    if (data.command) {
+      log(`  🔧 命令: ${data.command}`, 'info');
+    }
+    // 显示部署/推送的 stdout 日志（如上传进度、启动状态等）
+    if (data.detail) {
+      data.detail.split('\n').filter(l => l.trim()).forEach(line => log(`  ${line}`, 'info'));
+    }
     log(`✅ [${project}] ${action} 通过 (${elapsed}s)`, 'info');
 
     if (action === 'test') {
@@ -566,14 +862,32 @@ async function runAction(action, project) {
     }
   } else if (data) {
     setStep(p, action, 'fail');
+    // 统一处理各 handler 可能返回的不同错误字段（error_log / detail / error）
+    const errDetail = data.error_log || data.detail || data.error || '';
+    // 保存错误详情供点击步骤时弹出
+    window._stepErrors[stepKey(p, action)] = {
+      error_log: errDetail,
+      error: data.error || '',
+      duration: elapsed + 's'
+    };
     log(`❌ [${project}] ${action} 失败 (${elapsed}s)`, 'error');
     if (autoPipeline) {
       log(`⏹ 自动流水线: ${stepLabels[action]} 失败，流水线终止`, 'warn');
     }
+    // 展示错误详情
+    if (errDetail) {
+      log(`📋 错误详情（点击该步骤可查看完整日志）:`, 'error');
+      // 按行输出错误日志，限制最多 50 行避免刷屏
+      const errLines = errDetail.split('\n').filter(l => l.trim());
+      const showLines = errLines.slice(-50);
+      showLines.forEach(line => log(`   ${line}`, 'error'));
+      if (errLines.length > 50) {
+        log(`   ...（共 ${errLines.length} 行，仅显示最后 50 行）`, 'warn');
+      }
+    }
     if (action === 'check') {
-      log(`📋 错误详情: 请查看上方输出`, 'error');
       log(`💡 修复建议:`, 'warn');
-      log(`   1. 根据错误信息修改对应文件`, 'warn');
+      log(`   1. 根据上方错误信息修改对应文件`, 'warn');
       log(`   2. 修改后重新执行: ci check ${project}`, 'warn');
     }
     if (action === 'deploy') {
@@ -586,9 +900,22 @@ async function runAction(action, project) {
       log(`   2. SSH 服务未启动`, 'warn');
       log(`   3. 认证方式不匹配（推荐使用 SSH 密钥）`, 'warn');
     }
+  } else {
+    // API 返回 null（请求失败或 JSON 解析错误），必须标记为失败，否则步骤状态永远卡在 running
+    setStep(p, action, 'fail');
+    window._stepErrors[stepKey(p, action)] = {
+      error_log: '',
+      error: 'API 请求失败或响应格式异常（非 JSON）',
+      duration: elapsed + 's'
+    };
+    log(`❌ [${project}] ${action} 失败 (${elapsed}s)：API 响应异常`, 'error');
+    if (autoPipeline) {
+      log(`⏹ 自动流水线: ${stepLabels[action]} 失败，流水线终止`, 'warn');
+    }
   }
-  document.getElementById('statusText').textContent = '就绪';
-  refreshProjects();
+  runningCount--;
+  document.getElementById('statusText').textContent = runningCount > 0 ? `正在执行 ${runningCount} 个操作...` : '就绪';
+  renderProjects(); // 仅重新渲染表格（保留 _stepStatus），不重新拉取数据避免覆盖并发状态
 }
 
 function runDeploy(project) {
@@ -604,20 +931,41 @@ function runDeploy(project) {
 
 async function batchRun(action) {
   log(`🔄 批量 ${action}...`, 'info');
-  for (const p of projects) await runAction(action, p.name);
+  if (concurrentPipeline) {
+    // 并发：所有项目同时执行同一步骤
+    await Promise.all(projects.map(p => runAction(action, p.name)));
+  } else {
+    // 串行：逐个项目执行
+    for (const p of projects) await runAction(action, p.name);
+  }
   log(`✅ 批量 ${action} 完成`, 'info');
 }
 
 async function runPipelineAll() {
   log('⏯ 开始全链路流水线...', 'info');
-  for (const p of projects) {
-    const steps = getProjectSteps(p);
-    if (steps.length === 0) {
-      log(`⏭ [${p.name}] 无启用的流水线步骤，跳过`, 'warn');
-      continue;
+  if (concurrentPipeline) {
+    // 并发：所有项目的流水线同时执行（项目间并发，项目内步骤仍串行）
+    const tasks = projects.map(p => {
+      const steps = getProjectSteps(p);
+      if (steps.length === 0) {
+        log(`⏭ [${p.name}] 无启用的流水线步骤，跳过`, 'warn');
+        return Promise.resolve();
+      }
+      log(`🔷 [${p.name}] 开始流水线 (${steps.join(' → ')})`, 'info');
+      return runAction(steps[0], p.name);
+    });
+    await Promise.all(tasks);
+  } else {
+    // 串行：逐个项目执行完整流水线
+    for (const p of projects) {
+      const steps = getProjectSteps(p);
+      if (steps.length === 0) {
+        log(`⏭ [${p.name}] 无启用的流水线步骤，跳过`, 'warn');
+        continue;
+      }
+      log(`🔷 [${p.name}] 开始流水线 (${steps.join(' → ')})`, 'info');
+      await runAction(steps[0], p.name);
     }
-    log(`🔷 [${p.name}] 开始流水线 (${steps.join(' → ')})`, 'info');
-    await runAction(steps[0], p.name);
   }
   log('✅ 全链路流水线执行完毕', 'info');
 }
@@ -631,22 +979,145 @@ async function runSinglePipeline(project) {
     return;
   }
   log(`▶️ 开始流水线: ${project} (${steps.join(' → ')})`, 'info');
-  await runAction(steps[0], project);
-  log(`✅ 流水线完成: ${project}`, 'info');
+  // 重置所有步骤状态为 pending，清除旧的历史状态
+  steps.forEach(s => { setStep(p, s, 'pending'); });
+  // 同时清除持久化的状态（通过向服务器发送空状态覆盖）
+  try {
+    await fetch(`/api/steps/status/clear?project=${encodeURIComponent(project)}`, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} });
+  } catch(e) { /* ignore */ }
+  renderProjects();
+  // 逐个执行所有步骤
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    await runAction(step, project);
+    // 如果某一步失败，终止流水线
+    if (getStep(p, step) === 'fail') {
+      log(`⏹ 流水线在 ${stepLabels[step]} 步骤终止`, 'warn');
+      break;
+    }
+  }
+  if (steps.every(s => getStep(p, s) === 'pass')) {
+    log(`🎉 流水线全部通过: ${project}`, 'info');
+  } else {
+    log(`⚠️ 流水线未全部通过: ${project}`, 'warn');
+  }
 }
 
 // ===== 项目编辑弹窗 =====
 function showAddDialog() {
   document.getElementById('modalTitle').textContent = '添加项目';
+  currentEditProjectType = 'Unknown'; // 新增项目时重置类型
   ['inputName','inputPath','inputHost','inputPort','inputUser','inputRemote','inputKeyPath'].forEach(id => document.getElementById(id).value = '');
+  // 重置分支下拉框
+  const branchSel = document.getElementById('inputGitBranch');
+  if (branchSel) branchSel.innerHTML = '<option value="">默认（当前分支）</option>';
   document.getElementById('inputPort').value = '22';
   document.getElementById('inputTarget').value = 'production';
   document.getElementById('inputAuthType').value = 'key';
   document.getElementById('remoteList').innerHTML = '';
   document.getElementById('testResult').textContent = '';
   toggleKeyPath();
+  renderRules(null);
   renderPipelineConfig(null);
   document.getElementById('projectModal').classList.add('active');
+}
+
+// ===== 路径变更自动检测（项目类型 + 代码检查规则 + Git 远程仓库）=====
+async function detectProject(path) {
+  if (!path) return null;
+  try {
+    const resp = await fetch(`/api/project/detect?path=${encodeURIComponent(path)}`);
+    return await resp.json();
+  } catch(e) { return null; }
+}
+
+// 路径填写/变更后触发：检测项目类型 → 渲染可用规则，并自动填充 Git 远程仓库
+async function onPathChanged() {
+  const path = document.getElementById('inputPath').value.trim();
+  if (!path) { renderRules(null); return; }
+  const data = await detectProject(path);
+  if (!data || data.error) { renderRules(null); currentEditProjectType = 'Unknown'; return; }
+
+  // 更新当前编辑项目类型，流水线配置据此显示匹配的默认命令
+  currentEditProjectType = data.type || 'Unknown';
+
+  // 当前正在编辑的项目对象（编辑模式时存在，用于读取已保存的规则开关）
+  const editingName = document.getElementById('inputName').value;
+  const editingProject = projects.find(p => p.name === editingName);
+  renderRules(editingProject || { path, rules: [] }, data.type);
+
+  // 重新渲染流水线步骤，使默认命令表高亮当前类型行、输入框 placeholder 显示匹配的默认值
+  renderPipelineSteps();
+
+  // 自动展开规则区域，让用户看到检测到的规则
+  const rs = document.getElementById('rulesSection');
+  const ra = document.getElementById('rulesArrow');
+  if (rs) rs.classList.remove('collapsed');
+  if (ra) ra.classList.add('open');
+
+  // 填充 Git 分支下拉框
+  if (data.branches && data.branches.length > 0) {
+    fillBranchSelect(data.branches, data.currentBranch);
+  }
+
+  // 自动填充 Git 远程仓库（不覆盖已有配置）
+  if (data.isGit && data.remotes && data.remotes.length > 0) {
+    autoFillRemotes(data.remotes);
+  }
+}
+
+// fillBranchSelect 填充 Git 分支下拉框，保留已选值
+function fillBranchSelect(branches, currentBranch) {
+  const sel = document.getElementById('inputGitBranch');
+  if (!sel) return;
+  const prevValue = sel.value; // 编辑模式下保留已保存的选择
+  sel.innerHTML = '<option value="">默认（当前分支）</option>';
+  branches.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b;
+    opt.textContent = b + (b === currentBranch ? ' （当前）' : '');
+    sel.appendChild(opt);
+  });
+  // 恢复之前的选择
+  if (prevValue) sel.value = prevValue;
+}
+
+// detectBranchesFromPath 手动刷新分支列表
+async function detectBranchesFromPath() {
+  const path = document.getElementById('inputPath').value.trim();
+  if (!path) { log('❌ 请先填写项目路径', 'warn'); return; }
+  const data = await detectProject(path);
+  if (!data || data.error) { log('❌ 检测失败', 'error'); return; }
+  if (!data.branches || data.branches.length === 0) { log('⚠️ 未检测到 Git 分支', 'warn'); return; }
+  fillBranchSelect(data.branches, data.currentBranch);
+  log(`✅ 检测到 ${data.branches.length} 个分支，当前: ${data.currentBranch || '未知'}`, 'info');
+}
+
+// autoFillRemotes 自动填充远程仓库列表，仅在列表为空时填充，避免覆盖用户已配置的内容
+function autoFillRemotes(detectedRemotes) {
+  const rl = document.getElementById('remoteList');
+  const existingRows = rl.querySelectorAll('.remote-row');
+  const hasExisting = Array.from(existingRows).some(r => r.querySelector('.remote-url').value.trim());
+  if (hasExisting) {
+    log(`🔍 检测到 ${detectedRemotes.length} 个 Git 远程仓库，点击「🔍 从 Git 检测」按钮导入`, 'info');
+    return;
+  }
+  rl.innerHTML = '';
+  detectedRemotes.forEach(r => addRemoteRow(r.name, r.url, true));
+  log(`✅ 已自动导入 ${detectedRemotes.length} 个 Git 远程仓库`, 'info');
+}
+
+// detectRemotesFromPath 手动触发：从项目路径检测 Git 远程仓库并替换当前列表
+async function detectRemotesFromPath() {
+  const path = document.getElementById('inputPath').value.trim();
+  if (!path) { log('❌ 请先填写项目路径', 'warn'); return; }
+  const data = await detectProject(path);
+  if (!data || data.error) { log('❌ 检测失败: ' + (data?.error || '未知错误'), 'error'); return; }
+  if (!data.isGit) { log('⚠️ 该路径不是 Git 仓库', 'warn'); return; }
+  if (!data.remotes || data.remotes.length === 0) { log('⚠️ 该 Git 仓库未配置远程仓库', 'warn'); return; }
+  document.getElementById('remoteList').innerHTML = '';
+  data.remotes.forEach(r => addRemoteRow(r.name, r.url, true));
+  log(`✅ 已导入 ${data.remotes.length} 个远程仓库`, 'info');
 }
 
 function toggleKeyPath() {
@@ -666,11 +1137,13 @@ function editProject(name) {
   document.getElementById('inputAuthType').value = p.deploy?.auth_type || 'key';
   document.getElementById('inputKeyPath').value = p.deploy?.identity_file || '';
   document.getElementById('inputRemote').value = p.deploy?.remote_dir || '';
+  // 回填 Git 分支（分支列表由 onPathChanged 异步填充，这里先设置值）
+  const branchSel = document.getElementById('inputGitBranch');
+  if (branchSel && p.gitBranch) branchSel.value = p.gitBranch;
   document.getElementById('remoteList').innerHTML = '';
   document.getElementById('testResult').textContent = '';
   toggleKeyPath();
   if (p.remotes) p.remotes.forEach(r => addRemoteRow(r.name, r.url, r.enabled));
-  renderRules(p.path);
   renderPipelineConfig(p);
   ['deploy','git','rules'].forEach(s => {
     const body = document.getElementById(s+'Section');
@@ -679,6 +1152,8 @@ function editProject(name) {
     if (arrow) arrow.classList.add('open');
   });
   document.getElementById('projectModal').classList.add('active');
+  // 异步检测项目类型并渲染规则（remotes 已从已保存配置加载，不会被覆盖）
+  onPathChanged();
 }
 
 function testConnection() {
@@ -827,6 +1302,7 @@ function chooseLocalPath() {
   if (!localBrowserCurrentPath) { log('❌ 请先进入一个目录', 'warn'); return; }
   document.getElementById('inputPath').value = localBrowserCurrentPath;
   document.getElementById('pathBrowserModal').classList.remove('active');
+  onPathChanged();
 }
 
 function escJs(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
@@ -842,7 +1318,7 @@ async function deleteProject(name) {
   try {
     await apiPost('/api/project', {projects});
     log(`🗑️ 已删除项目: ${name}`, 'warn');
-    renderProjects();
+    refreshProjects();
   } catch(e) {
     log(`❌ 删除失败: ${e.message}`, 'error');
     refreshProjects(); // 回滚
@@ -881,6 +1357,7 @@ async function saveProject() {
   const rules = [];
   document.querySelectorAll('.rule-cb').forEach(cb => { rules.push({ id: cb.dataset.id, enabled: cb.checked }); });
   p.rules = rules;
+  p.gitBranch = document.getElementById('inputGitBranch')?.value || '';
   p.pipeline = getPipelineConfigFromUI();
   if (!p.name || !p.path) { log('❌ 请填写项目名称和路径', 'error'); return; }
   const idx = projects.findIndex(x => x.name === p.name);
@@ -891,7 +1368,7 @@ async function saveProject() {
     log(`✅ 项目已保存: ${p.name}`, 'info');
   } catch(e) { log(`❌ 保存失败: ${e.message}`, 'error'); }
   closeModal();
-  renderProjects();
+  refreshProjects(); // 重新从 API 拉取，获取 type/version/git_branch 等注入字段
 }
 
 // ===== 测试报告弹窗 =====
@@ -1195,6 +1672,7 @@ function forceDisconnectTab(tabId) {
     document.getElementById('downloadBtn').disabled = true;
   }
   renderRemoteTabs();
+  updateBroadcastBar();
 }
 
 // 显示指定标签页的终端
@@ -1407,6 +1885,11 @@ async function doConnect(tabId) {
         theme: { ...theme, ...ansiColors },
         allowTransparency: false,
         scrollback: 5000, convertEol: false, rows: 30, cols: 120,
+        // 拦截 Tab 键，阻止浏览器切换焦点，让 Tab 字符发送到 SSH 用于命令补全
+        attachCustomKeyEventHandler: (e) => {
+          if (e.key === 'Tab') { e.preventDefault(); return true; }
+          return true;
+        },
       });
       s.fitAddon = new FitAddon.FitAddon();
       s.term.loadAddon(s.fitAddon);
@@ -1439,6 +1922,7 @@ async function doConnect(tabId) {
     s.connected = true;
     s.connecting = false;
     renderRemoteTabs();
+    updateBroadcastBar();
     if (s.term) { s.term.focus(); setTimeout(() => { try { s.fitAddon.fit(); } catch(e){} }, 100); }
     writeToTerminalForSession(s, '\r\n=== SSH 终端已连接 ===\r\n');
     startSessionTimer(tabId);
@@ -1483,6 +1967,7 @@ async function doConnect(tabId) {
     s.ws = null;
     stopSessionTimer(tabId);
     renderRemoteTabs();
+    updateBroadcastBar();
   };
 
   // 终端输入 → WebSocket
@@ -1601,6 +2086,60 @@ function fallbackHandleKey(event) {
     fallbackSendInput(event.key);
   }
 }
+
+// ===== 命令广播栏 =====
+
+// updateBroadcastBar 显示/隐藏广播栏并更新已连接数量
+function updateBroadcastBar() {
+  const bar = document.getElementById('broadcastBar');
+  const countEl = document.getElementById('broadcastCount');
+  const btn = document.getElementById('broadcastSendBtn');
+  const input = document.getElementById('broadcastInput');
+  if (!bar || !countEl || !btn || !input) return;
+  const connected = Object.values(remoteSessions).filter(s => s.connected);
+  if (connected.length >= 2) {
+    bar.style.display = 'flex';
+    countEl.textContent = connected.length + ' 台';
+    btn.disabled = !input.value.trim();
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// sendBroadcast 将输入框命令发送到所有已连接服务器
+function sendBroadcast() {
+  const input = document.getElementById('broadcastInput');
+  const btn = document.getElementById('broadcastSendBtn');
+  if (!input || !btn) return;
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  const connected = Object.values(remoteSessions).filter(s => s.connected && s.ws);
+  if (connected.length === 0) {
+    log('📡 没有已连接的服务器', 'warn');
+    return;
+  }
+  // 追加换行确保命令立即执行
+  const msg = cmd + '\n';
+  connected.forEach(s => { try { s.ws.send(msg); } catch(e) {} });
+  log(`📡 [广播] 已发送到 ${connected.length} 台服务器: ${cmd}`, 'info');
+  input.value = '';
+  btn.disabled = true;
+  input.focus();
+}
+
+// 广播输入框的键盘事件：Enter 发送
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('broadcastInput');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); sendBroadcast(); }
+    });
+    input.addEventListener('input', () => {
+      const btn = document.getElementById('broadcastSendBtn');
+      if (btn) btn.disabled = !input.value.trim();
+    });
+  }
+});
 
 // 断开当前标签页
 function disconnectCurrentTab() {

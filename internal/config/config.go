@@ -8,12 +8,44 @@ import (
 )
 
 type Project struct {
-	Name     string        `json:"name"`
-	Path     string        `json:"path"`
-	Enabled  bool          `json:"enabled"`
-	Deploy   *DeployConfig `json:"deploy,omitempty"`
-	Pipeline *PipelineConfig `json:"pipeline,omitempty"`
-	CiDir    string        `json:"-"` // 自动填充
+	Name         string          `json:"name"`
+	Path         string          `json:"path"`
+	Enabled      bool            `json:"enabled"`
+	Deploy       *DeployConfig   `json:"deploy,omitempty"`
+	Pipeline     *PipelineConfig `json:"pipeline,omitempty"`
+	Rules        []RuleState     `json:"rules,omitempty"`         // 代码检查规则的单条启用/禁用状态
+	Remotes      []RemoteConfig  `json:"remotes,omitempty"`       // Git 远程仓库配置
+	DeployTarget string          `json:"deployTarget,omitempty"`  // 部署目标（production/staging）
+	GitBranch    string          `json:"gitBranch,omitempty"`     // 项目指定操作的 Git 分支
+	CiDir        string          `json:"-"`                       // 自动填充
+}
+
+// RemoteConfig Git 远程仓库配置
+type RemoteConfig struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
+}
+
+// RuleState 描述单条代码检查规则的启用状态。
+// ID 与 ci-runner.ps1 中识别的规则 id 对应（如 tsc/eslint/compile/checkstyle）。
+type RuleState struct {
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
+// IsRuleEnabled 返回指定规则是否启用。
+// 项目未配置任何规则（Rules 为空）时，所有规则默认启用，保持向后兼容。
+func (p *Project) IsRuleEnabled(id string) bool {
+	if len(p.Rules) == 0 {
+		return true
+	}
+	for _, r := range p.Rules {
+		if r.ID == id {
+			return r.Enabled
+		}
+	}
+	return true // 未显式列出的规则默认启用
 }
 
 // PipelineConfig 定义项目的自定义流水线步骤
@@ -80,6 +112,9 @@ type DeployConfig struct {
 	AuthType     string `json:"auth_type"`
 	IdentityFile string `json:"identity_file,omitempty"`
 	Password     string `json:"password,omitempty"`
+	StartCmd     string `json:"start_cmd,omitempty"`   // 自定义启动命令（为空则自动推断）
+	StopCmd      string `json:"stop_cmd,omitempty"`    // 自定义停止命令（为空则自动推断）
+	StatusCmd    string `json:"status_cmd,omitempty"`  // 自定义状态查询命令（为空则自动推断）
 }
 
 type Config struct {
