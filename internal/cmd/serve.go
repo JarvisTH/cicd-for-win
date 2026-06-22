@@ -60,8 +60,14 @@ func init() {
 	CmdServe.Flags().Bool("no-open", false, "不自动打开浏览器")
 }
 
+// testCiDir 用于测试时覆盖 ciDir() 的返回值，避免依赖 os.Executable()。
+var testCiDir string
+
 // ciDir 返回 ci.exe 所在目录（即 ci-cd 根目录）
 func ciDir() string {
+	if testCiDir != "" {
+		return testCiDir
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "."

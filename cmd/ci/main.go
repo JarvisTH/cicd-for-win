@@ -7,8 +7,6 @@ import (
 	"ci-cd/internal/cmd"
 )
 
-var jsonOutput bool
-
 var rootCmd = &cobra.Command{
 	Use:   "ci",
 	Short: "本地 CI/CD 命令行工具",
@@ -17,7 +15,7 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
-	rootCmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "以 JSON 格式输出")
+	rootCmd.PersistentFlags().BoolVarP(&cmd.JsonOutput, "json", "j", false, "以 JSON 格式输出")
 	rootCmd.AddCommand(
 		cmd.CmdCheck,
 		cmd.CmdTest,

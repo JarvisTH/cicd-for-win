@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"ci-cd/internal/util"
 )
 
 // LocalFileInfo 本地文件/目录信息
@@ -30,7 +32,7 @@ func handleLocalLs(w http.ResponseWriter, r *http.Request) {
 	// 无指定路径：返回盘符列表（Windows）或根目录内容
 	if dirPath == "" {
 		if runtime.GOOS == "windows" {
-			drives := listWindowsDrives()
+			drives := util.ListDrives()
 			json.NewEncoder(w).Encode(map[string]any{
 				"path":   "",
 				"drives": drives,
@@ -62,7 +64,7 @@ func handleLocalLs(w http.ResponseWriter, r *http.Request) {
 		// 权限不足等情况：返回空列表而非报错，便于用户向上返回
 		json.NewEncoder(w).Encode(map[string]any{
 			"path":   cleanPath,
-			"parent": localParent(cleanPath),
+			"parent": util.LocalParent(cleanPath),
 			"files":  []any{},
 		})
 		return
@@ -100,44 +102,10 @@ func handleLocalLs(w http.ResponseWriter, r *http.Request) {
 	all := append(dirs, files...)
 	json.NewEncoder(w).Encode(map[string]any{
 		"path":   cleanPath,
-		"parent": localParent(cleanPath),
+		"parent": util.LocalParent(cleanPath),
 		"drives": []string{},
 		"files":  all,
 	})
-}
-
-// localParent 返回上一级目录路径，用于"返回上级"导航
-func localParent(p string) string {
-	clean := filepath.Clean(p)
-	parent := filepath.Dir(clean)
-	// 已经在盘符根目录（如 "D:\"），返回空表示无上级
-	if runtime.GOOS == "windows" {
-		if len(clean) == 3 && clean[1] == ':' && clean[2] == '\\' {
-			return ""
-		}
-		// filepath.Dir("D:\\") == "D:" ，需置空
-		if len(parent) == 2 && parent[1] == ':' {
-			return ""
-		}
-	} else if clean == "/" {
-		return ""
-	}
-	if parent == clean {
-		return ""
-	}
-	return parent
-}
-
-// listWindowsDrives 枚举 A-Z 可用盘符
-func listWindowsDrives() []string {
-	var drives []string
-	for c := 'A'; c <= 'Z'; c++ {
-		root := string(c) + `:\`
-		if fi, err := os.Stat(root); err == nil && fi.IsDir() {
-			drives = append(drives, root)
-		}
-	}
-	return drives
 }
 
 // handleProjectDetect 检测指定路径的项目类型和 Git 远程仓库。

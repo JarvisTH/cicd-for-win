@@ -1,11 +1,14 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,16 +48,45 @@ type TestFailure struct {
 	Message string `json:"message"`
 }
 
+// Executor 定义命令执行器接口，用于解耦 PowerShell 调用，便于测试和扩展。
+type Executor interface {
+	// Run 执行 script，传入项目信息和参数，返回 JSON 格式的 Result。
+	Run(project config.Project, script string, args ...string) (Result, error)
+}
+
+// defaultExec 包级默认执行器，Run* 函数通过它执行。测试时可替换为 MockExecutor。
+var defaultExec Executor = &powershellExecutor{}
+
+// powershellExecutor 使用 Windows PowerShell 执行脚本。
+type powershellExecutor struct{}
+
+func (e *powershellExecutor) Run(project config.Project, script string, args ...string) (Result, error) {
+	return defaultExec.Run(project, script, args...)
+}
+
 func runPowershell(project config.Project, script string, args ...string) (Result, error) {
 	psScript := filepath.Join(project.CiDir, script)
 	cmdArgs := []string{"-ExecutionPolicy", "Bypass", "-File", psScript}
 	cmdArgs = append(cmdArgs, args...)
 	cmdArgs = append(cmdArgs, "-Json")
 
+	// 支持 Ctrl+C 取消
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	start := time.Now()
-	cmd := exec.Command("powershell.exe", cmdArgs...)
+	cmd := exec.CommandContext(ctx, "powershell.exe", cmdArgs...)
 	output, err := cmd.Output()
 	elapsed := time.Since(start)
+
+	if ctx.Err() != nil {
+		return Result{
+			Project:  project.Name,
+			Action:   script,
+			Status:   "cancelled",
+			Duration: fmt.Sprintf("%.1fs", elapsed.Seconds()),
+		}, fmt.Errorf("操作已取消")
+	}
 
 	if err != nil {
 		return Result{
@@ -75,15 +107,15 @@ func runPowershell(project config.Project, script string, args ...string) (Resul
 }
 
 func RunCheck(project config.Project) (Result, error) {
-	return runPowershell(project, "ci-runner.ps1", "-Action", "check", "-ProjectPath", project.Path)
+	return defaultExec.Run(project, "ci-runner.ps1", "-Action", "check", "-ProjectPath", project.Path)
 }
 
 func RunBuild(project config.Project) (Result, error) {
-	return runPowershell(project, "ci-runner.ps1", "-Action", "build", "-ProjectPath", project.Path)
+	return defaultExec.Run(project, "ci-runner.ps1", "-Action", "build", "-ProjectPath", project.Path)
 }
 
 func RunTest(project config.Project) (Result, error) {
-	result, err := runPowershell(project, "ci-runner.ps1", "-Action", "test", "-ProjectPath", project.Path)
+	result, err := defaultExec.Run(project, "ci-runner.ps1", "-Action", "test", "-ProjectPath", project.Path)
 	// 如果有测试报告，保存到磁盘
 	if err == nil && result.Report != nil {
 		saveTestReport(project, result)
@@ -94,7 +126,7 @@ func RunTest(project config.Project) (Result, error) {
 // saveTestReport 将测试报告保存到 reports/{project}/{timestamp}.json
 func saveTestReport(project config.Project, result Result) {
 	reportsDir := filepath.Join(project.CiDir, "reports", project.Name)
-	os.MkdirAll(reportsDir, 0755)
+	os.MkdirAll(reportsDir, config.DirPermDefault)
 
 	now := time.Now().Format("20060102-150405")
 	filename := fmt.Sprintf("test-%s.json", now)
@@ -109,13 +141,14 @@ func saveTestReport(project config.Project, result Result) {
 		Report:   result.Report,
 	}
 	data, _ := json.MarshalIndent(saveData, "", "  ")
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, config.FilePermDefault)
 
 	// 清理旧报告：只保留最近 20 条
-	cleanOldReports(reportsDir, 20)
+	cleanOldReports(reportsDir, config.MaxReportsKeep)
 }
 
 // cleanOldReports 清理旧报告，只保留最近的 n 条
+// 按文件名（时间戳）排序，删除最老的，确保只保留最新的 keep 条。
 func cleanOldReports(dir string, keep int) {
 	pattern := filepath.Join(dir, "test-*.json")
 	files, err := filepath.Glob(pattern)
@@ -125,7 +158,7 @@ func cleanOldReports(dir string, keep int) {
 	if len(files) <= keep {
 		return
 	}
-	// 文件已按字母序排列（时间戳在文件名中），删除最老的
+	sort.Strings(files) // 文件名含时间戳，按字典序 = 时间序
 	for i := 0; i < len(files)-keep; i++ {
 		os.Remove(files[i])
 	}
@@ -138,34 +171,16 @@ func RunHooks(project config.Project) error {
 }
 
 func RunDeploy(project config.Project, target string) (Result, error) {
-	deployScript := filepath.Join(project.CiDir, "cd-deploy.ps1")
-	cmd := exec.Command("powershell.exe",
-		"-ExecutionPolicy", "Bypass",
-		"-File", deployScript,
-		"-ProjectName", project.Name,
-		"-Action", "upload",
-	)
-	start := time.Now()
-	output, err := cmd.Output()
-	elapsed := time.Since(start)
-	if err != nil {
-		return Result{Project: project.Name, Action: "deploy", Status: "fail", Duration: fmt.Sprintf("%.1fs", elapsed.Seconds())}, err
+	args := []string{"-ProjectName", project.Name, "-Action", "upload"}
+	if target != "" {
+		args = append(args, "-Target", target)
 	}
-	var result Result
-	json.Unmarshal(output, &result)
-	result.Project = project.Name
-	result.Duration = fmt.Sprintf("%.1fs", elapsed.Seconds())
-	return result, nil
+	return defaultExec.Run(project, "cd-deploy.ps1", args...)
 }
 
 func RunPush(project config.Project) error {
-	pushScript := filepath.Join(project.CiDir, "ci-push.ps1")
-	cmd := exec.Command("powershell.exe",
-		"-ExecutionPolicy", "Bypass",
-		"-File", pushScript,
-		"-ProjectName", project.Name,
-	)
-	return cmd.Run()
+	_, err := defaultExec.Run(project, "ci-push.ps1", "-ProjectName", project.Name)
+	return err
 }
 
 func RunStatus(project config.Project) {

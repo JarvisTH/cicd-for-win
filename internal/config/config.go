@@ -10,6 +10,7 @@ import (
 type Project struct {
 	Name         string          `json:"name"`
 	Path         string          `json:"path"`
+	Type         string          `json:"type,omitempty"`
 	Enabled      bool            `json:"enabled"`
 	Deploy       *DeployConfig   `json:"deploy,omitempty"`
 	Pipeline     *PipelineConfig `json:"pipeline,omitempty"`
@@ -48,7 +49,13 @@ func (p *Project) IsRuleEnabled(id string) bool {
 	return true // 未显式列出的规则默认启用
 }
 
-// PipelineConfig 定义项目的自定义流水线步骤
+// 文件权限常量
+const (
+	FilePermSecure   = 0600 // 密钥、密码等敏感文件权限
+	FilePermDefault  = 0644 // 普通配置文件权限
+	DirPermDefault   = 0755 // 目录默认权限
+	MaxReportsKeep   = 20   // 每个项目保留的测试报告数
+)
 // Steps 为空时使用默认顺序: check → build → test → push → deploy
 type PipelineConfig struct {
 	Steps []PipelineStep `json:"steps,omitempty"`

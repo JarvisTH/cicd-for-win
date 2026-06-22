@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"ci-cd/internal/util"
 )
 
 // ========== local 子命令：本地目录浏览 ==========
@@ -28,9 +31,10 @@ var CmdLocalLs = &cobra.Command{
 		// 无路径：列盘符（Windows）或根目录
 		if dirPath == "" {
 			if runtime.GOOS == "windows" {
-				drives := listCliDrives()
+				drives := util.ListDrives()
 				if jsonOut {
-					fmt.Printf("%s\n", jsonMarshal(drives))
+					data, _ := json.Marshal(drives)
+					fmt.Printf("%s\n", string(data))
 					return nil
 				}
 				if len(drives) == 0 {
@@ -93,14 +97,15 @@ var CmdLocalLs = &cobra.Command{
 
 		if jsonOut {
 			all := append(dirs, files...)
-			fmt.Printf("%s\n", jsonMarshal(map[string]any{"path": clean, "files": all}))
+			data, _ := json.Marshal(map[string]any{"path": clean, "files": all})
+			fmt.Printf("%s\n", string(data))
 			return nil
 		}
 
 		fmt.Printf("📁 %s\n", clean)
 		fmt.Println(strings.Repeat("─", 60))
 		// 返回上级提示
-		parent := cliLocalParent(clean)
+		parent := util.LocalParent(clean)
 		if parent != "" && parent != clean {
 			fmt.Printf("  %-40s %s\n", "📁 ..", parent)
 		}
@@ -174,57 +179,6 @@ var CmdRulesView = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-// ========== 辅助函数 ==========
-
-func listCliDrives() []string {
-	var drives []string
-	for c := 'A'; c <= 'Z'; c++ {
-		root := string(c) + `:\`
-		if fi, err := os.Stat(root); err == nil && fi.IsDir() {
-			drives = append(drives, root)
-		}
-	}
-	return drives
-}
-
-func cliLocalParent(p string) string {
-	clean := filepath.Clean(p)
-	parent := filepath.Dir(clean)
-	if runtime.GOOS == "windows" {
-		if len(clean) == 3 && clean[1] == ':' && (clean[2] == '\\' || clean[2] == '/') {
-			return ""
-		}
-		if len(parent) == 2 && parent[1] == ':' {
-			return ""
-		}
-	} else if clean == "/" {
-		return ""
-	}
-	if parent == clean {
-		return ""
-	}
-	return parent
-}
-
-// jsonMarshal 简单 JSON 序列化，避免引入额外依赖
-func jsonMarshal(v any) string {
-	switch val := v.(type) {
-	case []string:
-		var b strings.Builder
-		b.WriteString("[")
-		for i, s := range val {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			b.WriteString(fmt.Sprintf("%q", s))
-		}
-		b.WriteString("]")
-		return b.String()
-	default:
-		return fmt.Sprintf("%v", v)
-	}
 }
 
 func init() {
