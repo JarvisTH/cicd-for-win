@@ -61,7 +61,7 @@ var defaultExec Executor = &powershellExecutor{}
 type powershellExecutor struct{}
 
 func (e *powershellExecutor) Run(project config.Project, script string, args ...string) (Result, error) {
-	return defaultExec.Run(project, script, args...)
+	return runPowershell(project, script, args...)
 }
 
 func runPowershell(project config.Project, script string, args ...string) (Result, error) {

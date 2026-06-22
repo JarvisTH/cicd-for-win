@@ -1461,15 +1461,13 @@ async function showReport(project, data) {
 }
 
 async function showReportById(project, id) {
-  const data = await api(`/api/report/latest?project=${encodeURIComponent(project)}`);
-  const listData = await api(`/api/report/list?project=${encodeURIComponent(project)}`);
-  const reports = listData?.reports || [];
-  const reportInfo = reports.find(r => r.id === id);
-  if (!reportInfo) { log(`📭 未找到该报告`, 'warn'); return; }
-  // 从磁盘读取指定报告
-  const r = await fetch(`/api/report/latest?project=${encodeURIComponent(project)}&id=${id}`);
-  // 回退：直接显示所有报告，让用户看到列表
-  showReport(project);
+  const data = await api(`/api/report/latest?project=${encodeURIComponent(project)}&id=${encodeURIComponent(id)}`);
+  if (data && data.report) {
+    showReport(project, data);
+  } else {
+    log(`📭 未找到该报告`, 'warn');
+    showReport(project);
+  }
 }
 
 async function deleteReport(project, id) {

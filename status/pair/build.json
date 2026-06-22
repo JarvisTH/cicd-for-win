@@ -1,1 +1,1 @@
-{"project":"pair","action":"build","status":"pass","duration":"90.2s","command":"powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action build -ProjectPath D:\\IDEA\\Project\\pair -Json"}
+{"project":"pair","action":"build","status":"pass","duration":"85.2s","command":"powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action build -ProjectPath D:\\IDEA\\Project\\pair -Json"}

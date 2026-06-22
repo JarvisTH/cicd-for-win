@@ -286,7 +286,7 @@ function Invoke-Test($projectPath) {
         }
         "Maven" {
             Push-Location $projectPath
-            $output = & "mvn.cmd" test -Dmaven.test.failure.ignore=true 2>&1
+            $output = & "mvn.cmd" test "-Dmaven.test.failure.ignore=true" 2>&1
             $exitCode = $LASTEXITCODE
             Pop-Location
             $report.raw_log = ($output | Out-String).Trim()
@@ -333,7 +333,7 @@ function Invoke-Test($projectPath) {
         }
         "MavenMulti" {
             Push-Location $projectPath
-            $output = & "mvn.cmd" test -Dmaven.test.failure.ignore=true 2>&1
+            $output = & "mvn.cmd" test "-Dmaven.test.failure.ignore=true" 2>&1
             $exitCode = $LASTEXITCODE
             Pop-Location
             $report.raw_log = ($output | Out-String).Trim()

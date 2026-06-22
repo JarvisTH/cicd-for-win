@@ -36,41 +36,61 @@ func saveTestReportToDisk(ciDir string, result runner.Result) {
 	}
 }
 
-// latestReportHandler 返回指定项目的最新测试报告
+// latestReportHandler 返回指定项目的最新测试报告。
+// 支持可选参数 id，指定后返回对应 ID 的历史报告而非最新。
 func latestReportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	project := r.URL.Query().Get("project")
 	if project == "" {
-		respondJSON(w, 200,map[string]string{"error": "缺少 project 参数"})
+		respondJSON(w, 200, map[string]string{"error": "缺少 project 参数"})
 		return
 	}
 	ciDir := findCiDir()
 	if ciDir == "" {
-		respondJSON(w, 200,map[string]string{"error": "找不到 ci-cd 目录"})
+		respondJSON(w, 200, map[string]string{"error": "找不到 ci-cd 目录"})
 		return
 	}
 
 	reportsDir := filepath.Join(ciDir, "reports", project)
+
+	// 如果指定了 id，直接加载该报告文件
+	if id := r.URL.Query().Get("id"); id != "" {
+		reportPath := filepath.Join(reportsDir, id+".json")
+		data, err := os.ReadFile(reportPath)
+		if err != nil {
+			respondJSON(w, 200, map[string]string{"error": "报告不存在"})
+			return
+		}
+		var report runner.Result
+		if err := json.Unmarshal(data, &report); err != nil {
+			respondJSON(w, 200, map[string]string{"error": "解析报告失败"})
+			return
+		}
+		respondJSON(w, 200, map[string]any{"report": report})
+		return
+	}
+
+	// 无 id 时返回最新报告
 	pattern := filepath.Join(reportsDir, "*.json")
 	files, err := filepath.Glob(pattern)
 	if err != nil || len(files) == 0 {
-		respondJSON(w, 200,map[string]any{"report": nil})
+		respondJSON(w, 200, map[string]any{"report": nil})
 		return
 	}
 
 	latest := files[len(files)-1]
 	data, err := os.ReadFile(latest)
 	if err != nil {
-		respondJSON(w, 200,map[string]string{"error": "读取报告失败"})
+		respondJSON(w, 200, map[string]string{"error": "读取报告失败"})
 		return
 	}
 
 	var report runner.Result
 	if err := json.Unmarshal(data, &report); err != nil {
-		respondJSON(w, 200,map[string]string{"error": "解析报告失败"})
+		respondJSON(w, 200, map[string]string{"error": "解析报告失败"})
 		return
 	}
-	respondJSON(w, 200,map[string]any{"report": report})
+	respondJSON(w, 200, map[string]any{"report": report})
 }
 
 // reportListHandler 返回指定项目的报告列表
