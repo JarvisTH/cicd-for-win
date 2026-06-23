@@ -167,7 +167,8 @@ var validStepIDs = map[string]bool{"check": true, "build": true, "test": true, "
 
 func isValidStepID(id string) bool { return validStepIDs[id] }
 
-func findCiDir() string {
+// findCiDir 返回 ci-cd 根目录路径。导出为变量以便测试覆盖。
+var findCiDir = func() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
