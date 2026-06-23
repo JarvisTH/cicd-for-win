@@ -1,1 +1,0 @@
-test(cmd): add CLI handler tests for project list and doctor
