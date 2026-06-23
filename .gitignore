@@ -14,6 +14,7 @@ commit_msg.txt
 .secretkey
 auth.json
 servers.json
+projects.json
 
 # 运行时生成目录
 status/
@@ -24,4 +25,5 @@ logs/
 # IDE
 .idea/
 .vscode/
+.codebuddy/
 *.swp
