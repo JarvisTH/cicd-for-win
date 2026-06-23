@@ -98,11 +98,11 @@ func runCIRunnerAction(project config.Project, action string, args []string) (Re
 
 	switch action {
 	case "check":
-		return RunCheckInternal(projectPath, projectType, ruleStates)
+		return RunCheckInternal(projectPath, projectType, ruleStates, project.CiDir)
 	case "build":
-		return RunBuildInternal(projectPath, projectType)
+		return RunBuildInternal(projectPath, projectType, project.CiDir)
 	case "test":
-		result, report, err := RunTestInternal(projectPath, projectType)
+		result, report, err := RunTestInternal(projectPath, projectType, project.CiDir)
 		if err == nil && report != nil {
 			result.Report = report
 			saveTestReport(project, result)

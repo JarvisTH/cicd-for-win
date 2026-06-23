@@ -36,10 +36,24 @@ func appendStep(steps *[]Step, name string, stepStart time.Time, execResult Exec
 // RunCheckInternal 对项目执行代码检查。
 // 支持 React（tsc + eslint）、Vue（vue-tsc + eslint）、Maven（compile + checkstyle）。
 // 对应 ci-runner.ps1 的 Invoke-Check 函数。
-func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates map[string]bool) (Result, error) {
+func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates map[string]bool, ciDir ...string) (Result, error) {
 	start := time.Now()
 	var steps []Step
 	allPassed := true
+
+	// 缓存检查（仅在提供 ciDir 时启用）
+	var projectName string
+	if len(ciDir) > 0 && ciDir[0] != "" {
+		projectName = filepath.Base(projectPath)
+		if cache := cacheHit(ciDir[0], projectName, "check", projectType, projectPath); cache != nil {
+			fmt.Fprintf(logWriter, cacheSummary(cache))
+			return Result{
+				Status:   "pass",
+				Duration: cache.Duration,
+				Steps:    []Step{{Name: "check", Status: "pass", Duration: cache.Duration}},
+			}, nil
+		}
+	}
 	var errLogs []string
 
 	switch projectType {
@@ -129,6 +143,16 @@ func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates ma
 	errorLog := strings.Join(errorLogParts, "\n")
 	if len(errorLog) > 5000 {
 		errorLog = errorLog[:5000] + "...（已截断）"
+	}
+
+	// 保存缓存
+	if projectName != "" {
+		saveCache(ciDir[0], projectName, "check", &BuildCache{
+			Project: projectName, Action: "check",
+			Status:   status,
+			Duration: fmt.Sprintf("%.1fs", duration.Seconds()),
+			MaxModTime: getLatestModTime(projectPath, projectType),
+		})
 	}
 
 	return Result{

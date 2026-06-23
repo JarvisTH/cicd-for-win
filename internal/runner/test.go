@@ -14,8 +14,11 @@ import (
 
 // RunTestInternal 对项目执行单元测试并解析测试报告。
 // 对应 ci-runner.ps1 的 Invoke-Test 函数。
-func RunTestInternal(projectPath string, projectType ProjectType) (Result, *TestReport, error) {
+func RunTestInternal(projectPath string, projectType ProjectType, ciDir ...string) (Result, *TestReport, error) {
 	start := time.Now()
+
+	// 缓存检查（仅 test 不需要缓存，因为每次应重新运行以获取最新报告）
+	// 但如果只想跳过无变更的测试，可以在此处添加 cacheHit 检查
 
 	switch projectType {
 	case ProjectTypeReact, ProjectTypeVue:

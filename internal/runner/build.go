@@ -12,10 +12,20 @@ import (
 // RunBuildInternal 对项目执行完整构建。
 // 支持 React/Vue（npm run build）、Maven（mvn clean package -DskipTests）、MavenMulti（mvn clean install -DskipTests）。
 // 对应 ci-runner.ps1 的 Invoke-Build 函数。
-func RunBuildInternal(projectPath string, projectType ProjectType) (Result, error) {
+func RunBuildInternal(projectPath string, projectType ProjectType, ciDir ...string) (Result, error) {
 	start := time.Now()
 	var steps []Step
 	allPassed := true
+
+	// 缓存检查
+	var projectName string
+	if len(ciDir) > 0 && ciDir[0] != "" {
+		projectName = filepath.Base(projectPath)
+		if cache := cacheHit(ciDir[0], projectName, "build", projectType, projectPath); cache != nil {
+			fmt.Fprintf(logWriter, cacheSummary(cache))
+			return Result{Status: "pass", Duration: cache.Duration, Steps: []Step{{Name: "build", Status: "pass", Duration: cache.Duration}}}, nil
+		}
+	}
 
 	switch projectType {
 	case ProjectTypeReact, ProjectTypeVue:
@@ -95,6 +105,16 @@ func RunBuildInternal(projectPath string, projectType ProjectType) (Result, erro
 	status := "pass"
 	if !allPassed {
 		status = "fail"
+	}
+
+	// 保存缓存
+	if projectName != "" {
+		saveCache(ciDir[0], projectName, "build", &BuildCache{
+			Project: projectName, Action: "build",
+			Status:   status,
+			Duration: fmt.Sprintf("%.1fs", duration.Seconds()),
+			MaxModTime: getLatestModTime(projectPath, projectType),
+		})
 	}
 
 	return Result{
