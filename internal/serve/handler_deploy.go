@@ -31,8 +31,14 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := runner.RunPushInternal(*proj)
 	if err == nil {
+		saveStepStatus(ciDir, runner.Result{
+			Project: projectName, Action: "push", Status: "pass",
+		})
 		respondJSON(w, 200, map[string]string{"status": "pass", "message": "推送成功"})
 	} else {
+		saveStepStatus(ciDir, runner.Result{
+			Project: projectName, Action: "push", Status: "fail", ErrorLog: err.Error(),
+		})
 		respondJSON(w, 200, map[string]string{"status": "fail", "message": err.Error()})
 	}
 }
