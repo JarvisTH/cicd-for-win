@@ -118,7 +118,54 @@ function log(msg, type) {
 
 function clearLog() { document.getElementById('logContent').innerHTML = '等待操作...'; }
 
-// 主题
+// 通知
+let notificationEnabled = localStorage.getItem('notification') === 'on';
+
+function toggleNotification() {
+  notificationEnabled = !notificationEnabled;
+  const btn = document.getElementById('notifToggle');
+  btn.textContent = notificationEnabled ? '🔔 通知:ON' : '🔔 通知:OFF';
+  localStorage.setItem('notification', notificationEnabled ? 'on' : 'off');
+  if (notificationEnabled && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  log(`🔔 桌面通知: ${notificationEnabled ? '已开启' : '已关闭'}`, 'info');
+}
+
+function sendNotification(title, body) {
+  if (!notificationEnabled) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">✅</text></svg>' });
+  } else if (Notification.permission === 'default') {
+    Notification.requestPermission().then(p => { if (p === 'granted') sendNotification(title, body); });
+  }
+}
+
+// 初始化通知权限
+if ('Notification' in window && notificationEnabled) {
+  if (Notification.permission === 'default') Notification.requestPermission();
+}
+
+// 文件监听（项目级）
+if (!window._watchingProjects) window._watchingProjects = {};
+
+async function toggleWatchProject(name) {
+  const btn = document.querySelector(`[onclick*="'${name}'"]`);
+  if (window._watchingProjects[name]) {
+    await fetch('/api/watch/stop?project=' + encodeURIComponent(name), { headers: {'X-Requested-With': 'XMLHttpRequest'} });
+    delete window._watchingProjects[name];
+    log(`👀 [${name}] 文件监听已关闭`, 'info');
+  } else {
+    const data = await api('/api/watch/start?project=' + encodeURIComponent(name));
+    if (data && data.status === 'ok') {
+      window._watchingProjects[name] = true;
+      log(`👀 [${name}] 文件监听已开启`, 'info');
+    } else {
+      log(`❌ [${name}] 启动监听失败: ${data?.error || '未知错误'}`, 'error');
+    }
+  }
+  renderProjects();
+}
 function toggleTheme() {
   document.body.classList.toggle('dark');
   localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');

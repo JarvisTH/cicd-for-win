@@ -146,6 +146,11 @@ func NewHandler(ciDir string) http.Handler {
 	mux.HandleFunc("/api/local/ls", handleLocalLs)
 	mux.HandleFunc("/api/local/open-dir", handleOpenDir)
 
+	// 文件监听
+	mux.HandleFunc("/api/watch/start", handleWatchStart)
+	mux.HandleFunc("/api/watch/stop", handleWatchStop)
+	mux.HandleFunc("/api/watch/status", handleWatchStatus)
+
 	// 远程管理 API
 	mux.HandleFunc("/api/remote/projects", handleRemoteDeployTargets)
 	mux.HandleFunc("/api/remote/servers", handleRemoteServers)

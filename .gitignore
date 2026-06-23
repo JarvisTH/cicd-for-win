@@ -8,3 +8,20 @@ commit_msg.txt
 *.cjs
 *.mjs
 *.ps1
+
+# 用户自配置文件
+.known_hosts
+.secretkey
+auth.json
+servers.json
+
+# 运行时生成目录
+status/
+cache/
+reports/
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp

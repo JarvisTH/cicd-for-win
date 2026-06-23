@@ -216,6 +216,7 @@ async function runAction(action, project) {
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   if (data && data.status === 'pass') {
     setStep(p, action, 'pass');
+    sendNotification(`✅ ${project} ${stepLabels[action]} 通过`, `耗时: ${elapsed}s`);
     log(`✅ [${project}] ${action} 通过 (${elapsed}s)`, 'info');
     if (action === 'test') { await new Promise(r => setTimeout(r, 100)); showReport(project, data); }
     if (autoPipeline) {
@@ -227,6 +228,7 @@ async function runAction(action, project) {
     setStep(p, action, 'fail');
     const errDetail = data.error_log || data.detail || data.error || '';
     window._stepErrors[stepKey(p, action)] = { error_log: errDetail, error: data.error || '', duration: elapsed + 's' };
+    sendNotification(`❌ ${project} ${stepLabels[action]} 失败`, errDetail ? errDetail.substring(0, 100) + '...' : '请查看错误详情');
     log(`❌ [${project}] ${action} 失败 (${elapsed}s)`, 'error');
     if (errDetail) { log(`📋 错误详情（点击该步骤可查看完整日志）:`, 'error'); errDetail.split('\n').filter(l => l.trim()).slice(-50).forEach(line => log(`   ${line}`, 'error')); }
   } else {

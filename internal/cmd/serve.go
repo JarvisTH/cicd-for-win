@@ -22,11 +22,12 @@ var CmdServe = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port, _ := cmd.Flags().GetString("port")
 		noOpen, _ := cmd.Flags().GetBool("no-open")
+		tray, _ := cmd.Flags().GetBool("tray")
 
 		handler := serve.NewHandler(ciDir())
 		server := &http.Server{Addr: ":" + port, Handler: handler}
 
-		if !noOpen {
+		if !noOpen && !tray {
 			url := fmt.Sprintf("http://localhost:%s", port)
 			fmt.Printf("🌐 打开 %s\n", url)
 			openBrowser(url)
@@ -34,15 +35,20 @@ var CmdServe = &cobra.Command{
 
 		fmt.Printf("🚀 CI/CD Web UI 启动于 http://localhost:%s\n", port)
 		fmt.Printf("🔑 默认用户名: admin  密码: 123456\n")
-		fmt.Println("   (首次启动时自动创建 ci-cd/auth.json，请通过 Web UI 或 `ci passwd` 修改密码)")
-		fmt.Println("按 Ctrl+C 停止服务器")
+
+		if tray {
+			fmt.Println("🖥️  托盘图标已启动，右键系统托盘图标可操作")
+			go serve.InitTray(port)
+		} else {
+			fmt.Println("   (首次启动时自动创建 ci-cd/auth.json，请通过 Web UI 或 `ci passwd` 修改密码)")
+			fmt.Println("按 Ctrl+C 停止服务器")
+		}
 
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, os.Interrupt)
 		go func() {
 			<-quit
 			fmt.Println("\n🛑 关闭服务器...")
-			// 优雅退出：先停 HTTP，再清理缓存的 SSH 连接，防止泄漏
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			server.Shutdown(ctx)
@@ -59,12 +65,11 @@ var CmdServe = &cobra.Command{
 func init() {
 	CmdServe.Flags().String("port", "8080", "监听端口")
 	CmdServe.Flags().Bool("no-open", false, "不自动打开浏览器")
+	CmdServe.Flags().Bool("tray", false, "启动系统托盘图标（需编译时加 -tags tray）")
 }
 
-// testCiDir 用于测试时覆盖 ciDir() 的返回值，避免依赖 os.Executable()。
 var testCiDir string
 
-// ciDir 返回 ci.exe 所在目录（即 ci-cd 根目录）
 func ciDir() string {
 	if testCiDir != "" {
 		return testCiDir
@@ -76,7 +81,6 @@ func ciDir() string {
 	return filepath.Dir(exe)
 }
 
-// openBrowser 跨平台打开 URL（Windows/Mac/Linux）
 func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "windows":

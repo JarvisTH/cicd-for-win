@@ -82,6 +82,7 @@ function renderActionButtons(p) {
   html += `<button class="action-btn btn-outline" onclick="editProject('${p.name}')">编辑</button>`;
   html += `<button class="action-btn btn-outline" onclick="showReport('${p.name}')" style="font-size:10px">📊 报告</button>`;
   html += `<button class="action-btn btn-outline" onclick="openBuildDir('${p.name}')" style="font-size:10px" title="打开构建产物目录">📁 产物</button>`;
+  html += `<button class="action-btn btn-outline" onclick="toggleWatchProject('${p.name}')" style="font-size:10px" title="文件变更后自动检查">👀 ${window._watchingProjects && window._watchingProjects[p.name] ? 'ON' : 'OFF'}</button>`;
   html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;
   html += `<button class="action-btn btn-warning" onclick="cancelPipeline('${p.name}')" style="font-size:10px" title="当前步骤完成后暂停流水线">⏸</button>`;
   html += `<button class="action-btn btn-danger" onclick="deleteProject('${p.name}')" style="font-size:10px">🗑</button>`;

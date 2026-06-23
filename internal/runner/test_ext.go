@@ -46,7 +46,7 @@ func runGoTest(projectPath string, start time.Time) (Result, *TestReport, error)
 				})
 			}
 		case "skip":
-			if event.Test != "" { report.Skipped++ }
+			if event.Test != "" { report.Skipped++; report.Total++ }
 		}
 		_ = currentPackage
 		_ = currentTest
