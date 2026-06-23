@@ -1,4 +1,4 @@
-//go:build tray
+//go:build windows
 
 package serve
 
@@ -18,50 +18,43 @@ var apiBase string
 
 func RunTray(serverURL string, onExit func()) {
 	apiBase = serverURL
-	systray.Run(func() { setupTray(serverURL) }, onExit)
+	systray.Run(func() { setupTray() }, onExit)
 }
 
-func setupTray(serverURL string) {
+func setupTray() {
 	systray.SetTitle("CI/CD")
 	systray.SetTooltip("本地 CI/CD 工具")
 
 	openItem := systray.AddMenuItem("🌐 打开浏览器", "")
 	systray.AddSeparator()
 
-	// ── 监听子菜单 ──
 	watchMenu := systray.AddMenuItem("👀 监听", "")
 	watchAll := watchMenu.AddSubMenuItemCheckbox("全部项目", "", false)
 
-	// ── 通知 ──
 	notifItem := systray.AddMenuItemCheckbox("🔔 系统通知", "", false)
 	systray.AddSeparator()
 
-	// ── 流水线子菜单（动态加载） ──
 	pipeMenu := systray.AddMenuItem("▶ 流水线", "")
 	pipeAll := pipeMenu.AddSubMenuItem("跑全部项目", "")
 	pipeMenu.AddSubMenuItem("─", "").Disable()
 
-	// ── 步骤子菜单（动态加载） ──
 	stepMenu := systray.AddMenuItem("⚙ 单步骤", "")
 	stepMenu.AddSubMenuItem("─", "").Disable()
 	systray.AddSeparator()
 
-	// ── 状态信息 ──
-	urlItem := systray.AddMenuItem(serverURL, "")
+	urlItem := systray.AddMenuItem(apiBase, "")
 	urlItem.Disable()
 	systray.AddSeparator()
 
 	quitItem := systray.AddMenuItem("⏹ 退出", "")
 
-	// 加载项目和构建动态菜单
 	go loadProjectMenus(watchMenu, pipeMenu, stepMenu, watchAll, pipeAll)
 
-	// 事件循环
 	go func() {
 		for {
 			select {
 			case <-openItem.ClickedCh:
-				openBrowser(serverURL)
+				openBrowser(apiBase)
 			case <-watchAll.ClickedCh:
 				if watchAll.Checked() { apiPost("/api/watch/stop"); watchAll.Uncheck() } else { apiGet("/api/watch/start?project=all"); watchAll.Check() }
 			case <-notifItem.ClickedCh:
@@ -74,6 +67,8 @@ func setupTray(serverURL string) {
 			}
 		}
 	}()
+
+	select {}
 }
 
 func loadProjectMenus(watchMenu, pipeMenu, stepMenu *systray.MenuItem, watchAll, pipeAll *systray.MenuItem) {
@@ -81,29 +76,18 @@ func loadProjectMenus(watchMenu, pipeMenu, stepMenu *systray.MenuItem, watchAll,
 	if len(projects) == 0 {
 		return
 	}
-
-	watchSubs := make(map[string]*systray.MenuItem)
-	pipeSubs := make(map[string]*systray.MenuItem)
-	stepSubs := make(map[string]map[string]*systray.MenuItem)
-
 	for _, p := range projects {
 		name := p["name"].(string)
-
-		// 监听: 每个项目独立开关
 		watchItem := watchMenu.AddSubMenuItemCheckbox("  "+name, "", false)
 		go func(n string, item *systray.MenuItem) {
 			for range item.ClickedCh {
 				if item.Checked() { apiGet("/api/watch/stop?project=" + n); item.Uncheck() } else { apiGet("/api/watch/start?project=" + n); item.Check() }
 			}
 		}(name, watchItem)
-
-		// 流水线: 每个项目
 		pipeItem := pipeMenu.AddSubMenuItem("  "+name, "")
 		go func(n string, item *systray.MenuItem) {
 			for range item.ClickedCh { apiGet("/api/pipeline/run?project=" + n) }
 		}(name, pipeItem)
-
-		// 步骤: 每个项目下的子步骤
 		stepProj := stepMenu.AddSubMenuItem("  "+name, "")
 		for _, step := range []string{"check", "build", "test", "push", "deploy"} {
 			stepItem := stepProj.AddSubMenuItem("    "+step, "")
@@ -112,6 +96,9 @@ func loadProjectMenus(watchMenu, pipeMenu, stepMenu *systray.MenuItem, watchAll,
 			}(name, step, stepItem)
 		}
 	}
+	_ = watchAll
+	_ = pipeAll
+}
 
 func fetchProjects() []map[string]any {
 	resp, err := http.Get(apiBase + "/api/projects")
@@ -128,7 +115,9 @@ func fetchProjects() []map[string]any {
 
 func apiGet(path string) string {
 	resp, err := http.Get(apiBase + path)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	return string(data)
@@ -136,7 +125,9 @@ func apiGet(path string) string {
 
 func apiPost(path string) string {
 	resp, err := http.Post(apiBase+path, "application/json", nil)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	return string(data)

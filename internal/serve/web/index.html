@@ -69,10 +69,24 @@
   <div class="toolbar">
     <div class="toolbar-group">
       <button class="btn-primary" onclick="runPipelineAll()">⏯ 运行流水线</button>
-      <button class="btn-outline" id="autoToggle" onclick="toggleAutoPipeline()">🌐 自动:OFF</button>
-      <button class="btn-outline" id="concurrentToggle" onclick="toggleConcurrent()">⚡ 并发:OFF</button>
-      <button class="btn-outline" id="notifToggle" onclick="toggleNotification()">🔔 通知:OFF</button>
-      <button class="btn-outline" id="watchToggle" onclick="toggleWatch()">👀 监听:OFF</button>
+      <div class="dropdown">
+        <button class="btn-outline" onclick="event.stopPropagation();toggleDropdown(this)">⚙ 设置 ▾</button>
+        <div class="dropdown-menu">
+          <div class="dropdown-item inactive" id="settingAuto" onclick="event.stopPropagation();toggleAutoPipeline()">
+            <span class="item-label">🌐 自动流水线</span><span class="item-state">OFF</span>
+          </div>
+          <div class="dropdown-item inactive" id="settingConcurrent" onclick="event.stopPropagation();toggleConcurrent()">
+            <span class="item-label">⚡ 并发执行</span><span class="item-state">OFF</span>
+          </div>
+          <div class="dropdown-item inactive" id="settingNotif" onclick="event.stopPropagation();toggleNotification()">
+            <span class="item-label">🔔 桌面通知</span><span class="item-state">OFF</span>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-item inactive" id="settingWatch" onclick="event.stopPropagation();toggleWatch()">
+            <span class="item-label">👀 全局监听</span><span class="item-state">OFF</span>
+          </div>
+        </div>
+      </div>
     </div>
     <span class="toolbar-divider"></span>
     <div class="toolbar-group">
@@ -82,7 +96,7 @@
   </div>
 
   <table class="project-table" id="projectTable">
-    <thead><tr><th>项目</th><th>类型</th><th>版本</th><th>分支/提交</th><th>状态</th><th>配置</th><th>流水线</th><th>进度</th><th style="width:520px">操作</th></tr></thead>
+    <thead><tr><th>项目</th><th>类型</th><th>版本</th><th>分支/提交</th><th>状态</th><th>配置</th><th>流水线</th><th>进度</th><th style="width:360px">操作</th></tr></thead>
     <tbody id="projectBody"></tbody>
   </table>
 
@@ -405,4 +419,14 @@
     <div class="form-group"><label>当前密码</label><input type="password" id="inputOldPass" placeholder="输入当前密码"></div>
     <div class="form-group"><label>新密码</label><input type="password" id="inputNewPass" placeholder="不少于 6 位"></div>
     <div class="form-group"><label>确认新密码</label><input type="password" id="inputConfirmPass" placeholder="再次输入新密码"></div>
-    <div id="passwordMsg" style="font-size:13px;margin-bottom:1
+    <div id="passwordMsg" style="font-size:13px;margin-bottom:10px"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closePasswordDialog()">取消</button>
+      <button class="btn-primary" onclick="changePassword()">确认修改</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -19,18 +19,14 @@ function getNextStep(project, current) {
 
 function toggleAutoPipeline() {
   autoPipeline = !autoPipeline;
-  document.getElementById('autoToggle').textContent = autoPipeline ? '🌐 自动:ON' : '🌐 自动:OFF';
-  if (autoPipeline) document.getElementById('autoToggle').classList.add('auto-on');
-  else document.getElementById('autoToggle').classList.remove('auto-on');
   log(`🌐 自动流水线: ${autoPipeline ? '已开启' : '已关闭'}`, 'info');
+  updateSettingsMenu();
 }
 
 function toggleConcurrent() {
   concurrentPipeline = !concurrentPipeline;
-  document.getElementById('concurrentToggle').textContent = concurrentPipeline ? '⚡ 并发:ON' : '⚡ 并发:OFF';
-  if (concurrentPipeline) document.getElementById('concurrentToggle').classList.add('auto-on');
-  else document.getElementById('concurrentToggle').classList.remove('auto-on');
   log(`⚡ 并发执行: ${concurrentPipeline ? '已开启（多项目同时执行）' : '已关闭（项目逐个执行）'}`, 'info');
+  updateSettingsMenu();
 }
 
 function renderStepper(p) {

@@ -1,4 +1,4 @@
-//go:build !tray
+//go:build !windows
 
 package serve
 

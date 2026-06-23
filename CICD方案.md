@@ -435,6 +435,17 @@ ci.exe serve
 
 每次 check/build 前扫描源文件（`src/`、`package.json`、`pom.xml` 等），若未变更则跳过实际执行，直接返回上次结果。
 
+**缓存失效条件**：
+- 源文件修改时间 > 缓存中的 `max_mod_time`
+- 上次构建失败（不缓存失败结果）
+
+**跳过缓存**：当依赖项（`node_modules`、`~/.m2`）更新或需要强制验证构建时可使用 `--no-cache` 标志：
+
+```bash
+ci check pair --no-cache   # 跳过缓存，强制重新检查
+ci build pair --no-cache   # 跳过缓存，强制重新构建
+```
+
 | 项目类型 | 监视文件/目录 | 缓存命中效果 |
 |---------|-------------|------------|
 | React / Vue / Node | `src/`、`package.json`、`tsconfig.json` | 二次执行 15s → 0.1s |

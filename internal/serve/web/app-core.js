@@ -123,13 +123,12 @@ let notificationEnabled = localStorage.getItem('notification') === 'on';
 
 function toggleNotification() {
   notificationEnabled = !notificationEnabled;
-  const btn = document.getElementById('notifToggle');
-  btn.textContent = notificationEnabled ? '🔔 通知:ON' : '🔔 通知:OFF';
   localStorage.setItem('notification', notificationEnabled ? 'on' : 'off');
   if (notificationEnabled && Notification.permission === 'default') {
     Notification.requestPermission();
   }
   log(`🔔 桌面通知: ${notificationEnabled ? '已开启' : '已关闭'}`, 'info');
+  updateSettingsMenu();
 }
 
 function sendNotification(title, body) {
@@ -151,11 +150,9 @@ if (!window._watchingProjects) window._watchingProjects = {};
 
 // 工具栏全局监听开关
 async function toggleWatch() {
-  const btn = document.getElementById('watchToggle');
-  const isOn = btn.textContent.includes('ON');
+  const isOn = Object.keys(window._watchingProjects).length > 0;
   if (isOn) {
     await fetch('/api/watch/stop', { headers: {'X-Requested-With': 'XMLHttpRequest'} });
-    btn.textContent = '👀 监听:OFF'; btn.classList.remove('auto-on');
     window._watchingProjects = {}; log('👀 文件监听已关闭', 'info');
   } else {
     const enabled = projects.filter(p => p.enabled);
@@ -164,14 +161,22 @@ async function toggleWatch() {
       const data = await api('/api/watch/start?project=' + encodeURIComponent(p.name));
       if (data && data.status === 'ok') { window._watchingProjects[p.name] = true; count++; }
     }
-    if (count > 0) { btn.textContent = '👀 监听:ON'; btn.classList.add('auto-on'); log(`👀 已开启 ${count} 个项目`, 'info'); }
+    if (count > 0) log(`👀 已开启 ${count} 个项目`, 'info');
   }
   renderProjects();
+  // 同步设置下拉中全局监听项状态
+  const watchItem = document.getElementById('settingWatch');
+  if (watchItem) {
+    const on = Object.keys(window._watchingProjects).length > 0;
+    watchItem.classList.toggle('active', on);
+    watchItem.classList.toggle('inactive', !on);
+    const st = watchItem.querySelector('.item-state');
+    if (st) st.textContent = on ? 'ON' : 'OFF';
+  }
 }
 
 // 每个项目行的独立监听开关
 async function toggleWatchProject(name) {
-  const btn = document.querySelector(`[onclick*="'${name}'"]`);
   if (window._watchingProjects[name]) {
     await fetch('/api/watch/stop?project=' + encodeURIComponent(name), { headers: {'X-Requested-With': 'XMLHttpRequest'} });
     delete window._watchingProjects[name];

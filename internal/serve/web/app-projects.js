@@ -72,6 +72,7 @@ function renderActionButtons(p) {
   const stepMap = {};
   if (p.pipeline && p.pipeline.steps) p.pipeline.steps.forEach(s => stepMap[s.id] = s.enabled);
   let html = '';
+  // 5 个步骤按钮 + 流水线主按钮（保持可见）
   allSteps.forEach(s => {
     if (stepMap[s] !== false) {
       html += s === 'deploy'
@@ -79,13 +80,23 @@ function renderActionButtons(p) {
         : `<button class="action-btn ${btnStyles[s]}" onclick="runAction('${s}','${p.name}')">${btnLabels[s]}</button>`;
     }
   });
-  html += `<button class="action-btn btn-outline" onclick="editProject('${p.name}')">编辑</button>`;
-  html += `<button class="action-btn btn-outline" onclick="showReport('${p.name}')" style="font-size:10px">📊 报告</button>`;
-  html += `<button class="action-btn btn-outline" onclick="openBuildDir('${p.name}')" style="font-size:10px" title="打开构建产物目录">📁 产物</button>`;
-  html += `<button class="action-btn btn-outline" onclick="toggleWatchProject('${p.name}')" style="font-size:10px" title="文件变更后自动检查">👀 ${window._watchingProjects && window._watchingProjects[p.name] ? 'ON' : 'OFF'}</button>`;
   html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;
-  html += `<button class="action-btn btn-warning" onclick="cancelPipeline('${p.name}')" style="font-size:10px" title="当前步骤完成后暂停流水线">⏸</button>`;
-  html += `<button class="action-btn btn-danger" onclick="deleteProject('${p.name}')" style="font-size:10px">🗑</button>`;
+  // 次要操作收入 ⋯ 溢出菜单
+  const watching = !!(window._watchingProjects && window._watchingProjects[p.name]);
+  html += `<div class="dropdown" style="display:inline-block">
+    <button class="action-btn btn-outline" onclick="event.stopPropagation();toggleDropdown(this)" style="font-size:10px;padding:5px 9px" title="更多操作">⋯</button>
+    <div class="dropdown-menu">
+      <div class="dropdown-item" onclick="closeAllDropdowns();editProject('${p.name}')">✏️ 编辑</div>
+      <div class="dropdown-item" onclick="closeAllDropdowns();showReport('${p.name}')">📊 报告</div>
+      <div class="dropdown-item" onclick="closeAllDropdowns();openBuildDir('${p.name}')">📁 产物目录</div>
+      <div class="dropdown-item ${watching ? 'active' : 'inactive'}" onclick="event.stopPropagation();toggleWatchProject('${p.name}')">
+        <span class="item-label">👀 文件监听</span><span class="item-state">${watching ? 'ON' : 'OFF'}</span>
+      </div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" onclick="closeAllDropdowns();cancelPipeline('${p.name}')">⏸ 取消流水线</div>
+      <div class="dropdown-item danger" onclick="closeAllDropdowns();deleteProject('${p.name}')">🗑 删除项目</div>
+    </div>
+  </div>`;
   return html;
 }
 
