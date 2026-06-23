@@ -62,7 +62,14 @@ function showStepError(project, step) {
   const isShortErr = !err.error_log && err.error;
   let bodyHtml = isShortErr ? `<div style="padding:12px 16px;background:var(--danger-subtle);border-radius:var(--r-sm);color:var(--danger);font-size:13px;line-height:1.6">${err.error}</div>`
     : `<pre class="error-log-pre">${errLines.map(l => l.replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('\n')}</pre>`;
-  modal.innerHTML = `<div class="modal-content" style="width:800px;max-width:90vw">${escHtml('')}</div>`;
+  modal.innerHTML = `<div class="modal-content" style="width:800px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">❌ ${stepLabels[step] || step} - 错误详情</h2>
+      <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">项目: <strong style="color:var(--text-primary)">${project}</strong> · 行数: ${errLines.length}</div>
+    ${bodyHtml}
+  </div>`;
 }
 
 // 生成流水线概览文本

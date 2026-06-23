@@ -1,1 +1,1 @@
-{"project":"pair-backend","action":"check","status":"pass","duration":"48.3s","command":"check","steps":[{"name":"compile","status":"pass","duration":"0.0s"},{"name":"checkstyle","status":"pass","duration":"0.0s"}]}
+{"project":"pair-backend","action":"check","status":"pass","duration":"10.8s","command":"check","steps":[{"name":"compile","status":"pass","duration":"0.0s"},{"name":"checkstyle","status":"pass","duration":"0.0s"}]}
