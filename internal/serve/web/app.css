@@ -526,6 +526,14 @@ body.dark header {
   box-shadow: var(--shadow-sm);
 }
 .action-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-strong); transform: translateY(-1px); }
+/* 步骤图标按钮：紧凑形式，仅图标 + title 提示，节省操作列宽度 */
+.step-icon-btn {
+  padding: 5px 8px !important;
+  font-size: 14px !important;
+  line-height: 1;
+  min-width: 32px;
+  text-align: center;
+}
 
 /* ===== Stepper ===== */
 .stepper {
@@ -1643,7 +1651,4 @@ body.dark .modal { background: rgba(0, 0, 0, 0.6); }
   margin: 4px 6px;
 }
 
-/* 表格行内的下拉菜单：需要更高 z-index 防遮挡 */
-.project-table .dropdown-menu { z-index: 50; }
-/* 下拉打开时阻止行 hover 背景覆盖 */
-.project-table tr { position: relative; }
+/* 表格行内下拉菜单使用 fixed 定位，复用默认 z-index 即可浮于所有内容之上 */

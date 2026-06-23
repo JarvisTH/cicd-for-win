@@ -66,18 +66,23 @@ function renderProjects() {
   });
 }
 
+// 步骤执行图标映射（紧凑图标按钮，hover 显示文字）
+const stepActionIcons = {check:'🔍',build:'🔨',test:'🧪',push:'⬆️',deploy:'🚀'};
+
 // ===== 操作按钮 =====
 function renderActionButtons(p) {
   const allSteps = getProjectAllSteps(p);
   const stepMap = {};
   if (p.pipeline && p.pipeline.steps) p.pipeline.steps.forEach(s => stepMap[s.id] = s.enabled);
   let html = '';
-  // 5 个步骤按钮 + 流水线主按钮（保持可见）
+  // 步骤按钮：紧凑图标形式（仅图标 + title 提示），大幅节省宽度
   allSteps.forEach(s => {
     if (stepMap[s] !== false) {
+      const icon = stepActionIcons[s] || '•';
+      const title = btnLabels[s];
       html += s === 'deploy'
-        ? `<button class="action-btn btn-danger" onclick="runDeploy('${p.name}')">${btnLabels[s]}</button>`
-        : `<button class="action-btn ${btnStyles[s]}" onclick="runAction('${s}','${p.name}')">${btnLabels[s]}</button>`;
+        ? `<button class="action-btn btn-danger step-icon-btn" onclick="runDeploy('${p.name}')" title="${title}">${icon}</button>`
+        : `<button class="action-btn ${btnStyles[s]} step-icon-btn" onclick="runAction('${s}','${p.name}')" title="${title}">${icon}</button>`;
     }
   });
   html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;

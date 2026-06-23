@@ -217,20 +217,46 @@ function getFileIcon(name) {
 }
 
 // ===== 下拉菜单组件 =====
+// 使用 fixed 定位 + JS 计算坐标，避免被父级 overflow:hidden（如 .project-table）裁剪
 function toggleDropdown(triggerEl) {
   const menu = triggerEl.nextElementSibling;
   if (!menu || !menu.classList.contains('dropdown-menu')) return;
   const isOpen = menu.classList.contains('open');
   closeAllDropdowns();
-  if (!isOpen) menu.classList.add('open');
+  if (isOpen) return;
+  const rect = triggerEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = 'auto';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.top = (rect.bottom + 6) + 'px';
+  menu.classList.add('open');
+  // 边界自适应：超出视口底部则向上展开；超出左侧则左对齐
+  requestAnimationFrame(() => {
+    const mRect = menu.getBoundingClientRect();
+    if (mRect.bottom > window.innerHeight - 8) {
+      menu.style.top = Math.max(8, rect.top - 6 - mRect.height) + 'px';
+    }
+    if (mRect.left < 8) {
+      menu.style.right = 'auto';
+      menu.style.left = Math.max(8, rect.left) + 'px';
+    }
+  });
 }
 function closeAllDropdowns() {
-  document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.dropdown-menu.open').forEach(m => {
+    m.classList.remove('open');
+    m.style.position = '';
+    m.style.top = '';
+    m.style.right = '';
+    m.style.left = '';
+  });
 }
-// 全局点击关闭下拉菜单（点击 .dropdown 外部时关闭）
+// 全局点击关闭下拉菜单（点击 .dropdown 外部时关闭）；滚动/缩放时也关闭，避免 fixed 错位
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.dropdown')) closeAllDropdowns();
 });
+window.addEventListener('scroll', closeAllDropdowns, true);
+window.addEventListener('resize', closeAllDropdowns);
 
 // ===== 设置菜单状态同步 =====
 // 更新工具栏「设置」下拉菜单中开关项的文案与样式
