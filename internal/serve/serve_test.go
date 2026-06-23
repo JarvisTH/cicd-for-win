@@ -597,3 +597,66 @@ func TestHandleViewRuleFile_EmptyFile(t *testing.T) {
 		t.Errorf("missing file param should return 400, got %d", w.Code)
 	}
 }
+
+// ===================== stepStatusClearHandler =====================
+
+func TestStepStatusClearHandler_All(t *testing.T) {
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "status", "test-proj")
+	os.MkdirAll(projDir, 0755)
+	os.WriteFile(filepath.Join(projDir, "check.json"), []byte(`{"status":"pass"}`), 0644)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/steps/status/clear", nil)
+	// Override findCiDir for this test
+	origFindCiDir := findCiDir
+	findCiDir = func() string { return dir }
+	defer func() { findCiDir = origFindCiDir }()
+
+	stepStatusClearHandler(w, r)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if _, err := os.Stat(projDir); err == nil {
+		t.Error("status dir should be cleared")
+	}
+}
+
+// ===================== handleLogQuery =====================
+
+func TestHandleLogQuery_Empty(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "logs"), 0755)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/log/query", nil)
+	origFindCiDir := findCiDir
+	findCiDir = func() string { return dir }
+	defer func() { findCiDir = origFindCiDir }()
+
+	handleLogQuery(w, r)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var result map[string][]any
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["logs"] == nil {
+		t.Error("logs should not be nil")
+	}
+}
+
+// ===================== handleLogDelete =====================
+
+func TestHandleLogDelete_MissingDate(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/log/delete", nil)
+	handleLogDelete(w, r)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var result map[string]string
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["error"] == "" {
+		t.Error("missing date should return error")
+	}
+}

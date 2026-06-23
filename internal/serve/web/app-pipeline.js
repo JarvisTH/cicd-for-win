@@ -177,12 +177,36 @@ function resetPipeline() { pipelineEditingSteps = defaultStepOrder.map(id => ({ 
 function getPipelineConfigFromUI() { return { steps: JSON.parse(JSON.stringify(pipelineEditingSteps)) }; }
 
 // ===== 操作执行 =====
+// 项目锁：同一项目有步骤正在运行时，阻止触发其他步骤
+const _runningLocks = {};
+
 async function runAction(action, project) {
+  if (_runningLocks[project]) {
+    log(`⏭ [${project}] 该项目有步骤正在运行，请等待完成`, 'warn');
+    return;
+  }
+  _runningLocks[project] = true;
+
   const p = projects.find(x => x.name === project);
   const start = Date.now();
+
+  // 重置当前步骤及其下游步骤的状态为 pending
+  const allSteps = getProjectAllSteps(p);
+  const currentIdx = allSteps.indexOf(action);
+  if (currentIdx >= 0) {
+    // 重置当前步骤之后的全部步骤
+    for (let i = currentIdx; i < allSteps.length; i++) {
+      setStep(p, allSteps[i], 'pending');
+      delete window._stepErrors[stepKey(p, allSteps[i])];
+    }
+  }
+  renderProjects();
+
   setStep(p, action, 'running'); renderProjects();
   if (action === 'deploy' && (!p || !p.deploy || !p.deploy.host)) {
-    log(`❌ [${project}] 未配置部署信息`, 'error'); setStep(p, action, 'pending'); renderProjects(); return;
+    log(`❌ [${project}] 未配置部署信息`, 'error'); setStep(p, action, 'pending'); renderProjects();
+    delete _runningLocks[project];
+    return;
   }
   runningCount++;
   const stepInfo = stepDefaults[action];
@@ -212,6 +236,7 @@ async function runAction(action, project) {
   }
   runningCount--;
   document.getElementById('statusText').textContent = runningCount > 0 ? `正在执行 ${runningCount} 个操作...` : '就绪';
+  delete _runningLocks[project];
   renderProjects();
 }
 
@@ -238,18 +263,50 @@ async function runPipelineAll() {
   log('✅ 全链路流水线执行完毕', 'info');
 }
 
+// 流水线取消标记
+const _pipelineCancel = {};
+
+function cancelPipeline(project) {
+  _pipelineCancel[project] = true;
+  log(`⏹ [${project}] 流水线暂停中，当前步骤完成后停止`, 'warn');
+}
+
 async function runSinglePipeline(project) {
   const p = projects.find(x => x.name === project);
-  if (!p) return; const steps = getProjectSteps(p);
-  if (!steps.length) { log(`⏭ [${project}] 无启用的流水线步骤`, 'warn'); return; }
-  log(`▶️ 开始流水线: ${project} (${steps.join(' → ')})`, 'info');
-  steps.forEach(s => setStep(p, s, 'pending'));
-  try { await fetch(`/api/steps/status/clear?project=${encodeURIComponent(project)}`, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} }); } catch(e) {}
-  renderProjects();
-  for (let i = 0; i < steps.length; i++) {
-    await runAction(steps[i], project);
-    if (getStep(p, steps[i]) === 'fail') { log(`⏹ 流水线在 ${stepLabels[steps[i]]} 步骤终止`, 'warn'); break; }
+  if (!p) return;
+  const allSteps = getProjectSteps(p);
+  if (!allSteps.length) { log(`⏭ [${project}] 无启用的流水线步骤`, 'warn'); return; }
+
+  // 检查是否有已通过的步骤（来自之前被暂停的流水线），若有则续跑
+  const passedSteps = allSteps.filter(s => getStep(p, s) === 'pass');
+  const remainingSteps = allSteps.filter(s => getStep(p, s) !== 'pass');
+
+  if (remainingSteps.length === allSteps.length) {
+    // 无已通过的步骤，从头开始
+    log(`▶️ 开始流水线: ${project} (${allSteps.join(' → ')})`, 'info');
+    allSteps.forEach(s => setStep(p, s, 'pending'));
+    try { await fetch(`/api/steps/status/clear?project=${encodeURIComponent(project)}`, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} }); } catch(e) {}
+  } else {
+    // 有已通过的步骤，续跑
+    log(`▶️ 续跑流水线: ${project} (从 ${stepLabels[remainingSteps[0]]} 继续)`, 'info');
+    // 重置剩余步骤为 pending
+    remainingSteps.forEach(s => setStep(p, s, 'pending'));
   }
-  if (steps.every(s => getStep(p, s) === 'pass')) log(`🎉 流水线全部通过: ${project}`, 'info');
+  _pipelineCancel[project] = false;
+  renderProjects();
+
+  for (let i = 0; i < allSteps.length; i++) {
+    const step = allSteps[i];
+    // 跳过已通过的步骤
+    if (passedSteps.includes(step)) continue;
+    if (_pipelineCancel[project]) {
+      log(`⏸ [${project}] 流水线已暂停，剩余步骤: ${allSteps.slice(i).filter(s => !passedSteps.includes(s)).map(s => stepLabels[s]).join(' → ')}`, 'warn');
+      break;
+    }
+    await runAction(step, project);
+    if (getStep(p, step) === 'fail') { log(`⏹ 流水线在 ${stepLabels[step]} 步骤终止`, 'warn'); break; }
+  }
+  delete _pipelineCancel[project];
+  if (allSteps.every(s => getStep(p, s) === 'pass')) log(`🎉 流水线全部通过: ${project}`, 'info');
   else log(`⚠️ 流水线未全部通过: ${project}`, 'warn');
 }

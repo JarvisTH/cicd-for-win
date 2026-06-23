@@ -1,1 +1,1 @@
-{"project":"pair","action":"check","status":"pass","duration":"13.0s","command":"check","steps":[{"name":"tsc","status":"pass","duration":"0.0s"},{"name":"eslint","status":"pass","duration":"0.0s"}]}
+{"project":"pair","action":"check","status":"pass","duration":"13.4s","command":"check","steps":[{"name":"check","status":"pass","duration":"13.4s"}]}

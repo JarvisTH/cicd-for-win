@@ -82,6 +82,7 @@ function renderActionButtons(p) {
   html += `<button class="action-btn btn-outline" onclick="editProject('${p.name}')">编辑</button>`;
   html += `<button class="action-btn btn-outline" onclick="showReport('${p.name}')" style="font-size:10px">📊 报告</button>`;
   html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;
+  html += `<button class="action-btn btn-warning" onclick="cancelPipeline('${p.name}')" style="font-size:10px" title="当前步骤完成后暂停流水线">⏸</button>`;
   html += `<button class="action-btn btn-danger" onclick="deleteProject('${p.name}')" style="font-size:10px">🗑</button>`;
   return html;
 }
