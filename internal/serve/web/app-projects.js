@@ -81,6 +81,7 @@ function renderActionButtons(p) {
   });
   html += `<button class="action-btn btn-outline" onclick="editProject('${p.name}')">编辑</button>`;
   html += `<button class="action-btn btn-outline" onclick="showReport('${p.name}')" style="font-size:10px">📊 报告</button>`;
+  html += `<button class="action-btn btn-outline" onclick="openBuildDir('${p.name}')" style="font-size:10px" title="打开构建产物目录">📁 产物</button>`;
   html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;
   html += `<button class="action-btn btn-warning" onclick="cancelPipeline('${p.name}')" style="font-size:10px" title="当前步骤完成后暂停流水线">⏸</button>`;
   html += `<button class="action-btn btn-danger" onclick="deleteProject('${p.name}')" style="font-size:10px">🗑</button>`;
@@ -97,7 +98,29 @@ function showStatDetail(type) {
   else if (type === 'deploy') { title = '🚀 部署成功'; items = projects.filter(p=>getStep(p,'deploy')==='pass').map(p=>({name:p.name,type:p.type||'未知',status:'pass',detail:p.deploy?`${p.deploy.user}@${p.deploy.host}`:'已部署'})); }
   else if (type === 'remote') { title = '📤 远程仓库'; projects.forEach(p=>{if(p.remotes)p.remotes.filter(r=>r.enabled!==false).forEach(r=>items.push({name:p.name,type:r.name,status:'pass',detail:r.url}));}); }
   if (!items.length) { modal.innerHTML = `<div class="modal-content" style="width:500px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">${title}</h2><button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button></div><div style="padding:30px;text-align:center;color:var(--text-tertiary)">暂无数据</div></div>`; modal.classList.add('active'); return; }
-  modal.innerHTML = `<div class="modal-content" style="width:750px">${escHtml('')}</div>`;
+  // 渲染详情表格
+  const rows = items.map(it => {
+    const icon = it.status === 'pass' ? '✅' : it.status === 'fail' ? '❌' : '⚪';
+    const cursor = it.clickable ? 'cursor:pointer' : '';
+    const click = it.clickable ? `onclick="showStepError('${it.projectName}','${defaultStepOrder.find(s => getStep(projects.find(p=>p.name===it.projectName), s) === 'fail')}')"` : '';
+    return `<tr style="${cursor}" ${click}><td><strong>${it.name}</strong></td><td><span class="tag tag-${(it.type||'').toLowerCase()}">${it.type}</span></td><td style="text-align:center">${icon}</td><td style="font-size:11px;color:var(--text-tertiary)">${it.detail}</td></tr>`;
+  }).join('');
+  modal.innerHTML = `<div class="modal-content" style="width:750px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">${title} <span style="font-size:13px;color:var(--text-tertiary);font-weight:400">(${items.length})</span></h2>
+      <button class="btn-outline" onclick="document.getElementById('reportModal').classList.remove('active')" style="font-size:12px;padding:4px 12px">✕ 关闭</button>
+    </div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead><tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary)">项目</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary);width:90px">类型</th>
+        <th style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary);width:40px">状态</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--text-quaternary)">详情</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+  modal.classList.add('active');
 }
 
 // ===== 项目编辑弹窗 =====
@@ -301,4 +324,41 @@ async function deleteProject(name) {
   const idx = projects.findIndex(x => x.name === name);
   if (idx < 0) return; projects.splice(idx, 1);
   try { await apiPost('/api/project', {projects}); log(`🗑️ 已删除: ${name}`, 'warn'); refreshProjects(); } catch(e) { refreshProjects(); }
+}
+
+// ===== 打开构建产物目录 =====
+function openBuildDir(name) {
+  const p = projects.find(x => x.name === name);
+  if (!p || !p.path) { log(`❌ [${name}] 找不到项目路径`, 'error'); return; }
+  // 根据项目类型确定产物目录，不存在时回退到项目根目录
+  const type = (p.type || '').toLowerCase();
+  let subDir = '';
+  if (['react', 'vue', 'angular', 'next', 'node'].includes(type)) {
+    subDir = 'dist';
+  } else if (['maven', 'mavenmulti'].includes(type)) {
+    subDir = 'target';
+  } else {
+    subDir = 'dist'; // 默认尝试 dist
+  }
+  // 使用系统路径分隔符
+  const basePath = p.path;
+  const targetPath = basePath + '\\' + subDir;
+  // 检查产物目录是否存在，不存在则打开项目根目录
+  const openPath = basePath + '\\' + subDir;
+  fetch(`/api/local/open-dir?path=${encodeURIComponent(openPath)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'ok') log(`📁 已打开: ${openPath}`, 'info');
+      else {
+        // 产物目录不存在，尝试打开项目根目录
+        log(`⚠️ 产物目录不存在，打开项目根目录`, 'warn');
+        fetch(`/api/local/open-dir?path=${encodeURIComponent(basePath)}`)
+          .then(r2 => r2.json())
+          .then(d2 => {
+            if (d2.status === 'ok') log(`📁 已打开: ${basePath}`, 'info');
+            else log(`❌ 打开失败: ${d2.error}`, 'error');
+          });
+      }
+    })
+    .catch(() => log(`❌ 打开目录失败`, 'error'));
 }

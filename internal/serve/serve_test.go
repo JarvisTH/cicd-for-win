@@ -660,3 +660,33 @@ func TestHandleLogDelete_MissingDate(t *testing.T) {
 		t.Error("missing date should return error")
 	}
 }
+
+// ===================== handleOpenDir =====================
+
+func TestHandleOpenDir_MissingPath(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/local/open-dir", nil)
+	handleOpenDir(w, r)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var result map[string]string
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["error"] == "" {
+		t.Error("missing path should return error")
+	}
+}
+
+func TestHandleOpenDir_EmptyPath(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/local/open-dir?path=", nil)
+	handleOpenDir(w, r)
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var result map[string]string
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["error"] == "" {
+		t.Error("empty path should return error")
+	}
+}

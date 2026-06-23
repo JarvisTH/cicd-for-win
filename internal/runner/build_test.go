@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"strings"
 	"testing"
+	"time"
 )
 
 // ===================== RunBuildInternal (mock 命令执行) =====================
@@ -136,6 +138,109 @@ func TestContainsAny(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("containsAny(%q, %v) = %v, 期望 %v", tc.s, tc.targets, got, tc.want)
 		}
+	}
+}
+
+// ===================== makeBuildStep =====================
+
+func TestMakeBuildStep_Success(t *testing.T) {
+	r := ExecResult{ExitCode: 0, Stdout: "build ok"}
+	step := makeBuildStep("build", time.Now(), r)
+	if step.Status != "pass" {
+		t.Errorf("status should be pass, got %s", step.Status)
+	}
+	if step.ErrorLog != "" {
+		t.Errorf("success should have no error log, got %s", step.ErrorLog)
+	}
+}
+
+func TestMakeBuildStep_FailWithStderr(t *testing.T) {
+	r := ExecResult{ExitCode: 1, Stderr: "npm ERR! build failed"}
+	step := makeBuildStep("build", time.Now(), r)
+	if step.Status != "fail" {
+		t.Errorf("status should be fail, got %s", step.Status)
+	}
+	if !strings.Contains(step.ErrorLog, "npm ERR!") {
+		t.Errorf("should capture stderr, got %s", step.ErrorLog)
+	}
+}
+
+func TestMakeBuildStep_FailWithStdoutFallback(t *testing.T) {
+	r := ExecResult{ExitCode: 1, Stdout: "BUILD FAILURE", Stderr: ""}
+	step := makeBuildStep("build", time.Now(), r)
+	if step.Status != "fail" {
+		t.Errorf("status should be fail, got %s", step.Status)
+	}
+	if !strings.Contains(step.ErrorLog, "BUILD FAILURE") {
+		t.Errorf("should fallback to stdout, got %s", step.ErrorLog)
+	}
+}
+
+func TestMakeBuildStep_TruncatesLongError(t *testing.T) {
+	long := string(make([]byte, 3000))
+	r := ExecResult{ExitCode: 1, Stderr: long}
+	step := makeBuildStep("build", time.Now(), r)
+	if len(step.ErrorLog) > 2100 {
+		t.Errorf("long error should be truncated, length %d", len(step.ErrorLog))
+	}
+}
+
+func TestMakeBuildStep_Duration(t *testing.T) {
+	start := time.Now()
+	time.Sleep(100 * time.Millisecond)
+	r := ExecResult{ExitCode: 0}
+	step := makeBuildStep("build", start, r)
+	if step.Duration == "" || step.Duration == "0.0s" {
+		t.Errorf("duration should be positive, got %s", step.Duration)
+	}
+}
+
+// ===================== RunBuildInternal ErrorLog capture =====================
+
+func TestRunBuildInternal_Frontend_FailCapturesError(t *testing.T) {
+	mock := &mockCmdRunner{
+		results: map[string]func([]string) ExecResult{
+			"npm": func(args []string) ExecResult {
+				return ExecResult{ExitCode: 1, Stderr: "npm ERR! build script failed\nError: command not found"}
+			},
+		},
+	}
+	defer setCmdMock(mock)()
+
+	result, err := RunBuildInternal(t.TempDir(), ProjectTypeReact)
+	if err != nil {
+		t.Fatalf("RunBuildInternal failed: %v", err)
+	}
+	if result.Status != "fail" {
+		t.Errorf("status should be fail, got %s", result.Status)
+	}
+	if result.ErrorLog == "" {
+		t.Error("ErrorLog should not be empty when build fails")
+	}
+	if !strings.Contains(result.ErrorLog, "npm ERR!") {
+		t.Errorf("ErrorLog should contain command output, got %s", result.ErrorLog)
+	}
+}
+
+func TestRunBuildInternal_Maven_FailCapturesError(t *testing.T) {
+	mock := &mockCmdRunner{
+		results: map[string]func([]string) ExecResult{
+			"mvn": func(args []string) ExecResult {
+				return ExecResult{ExitCode: 1, Stderr: "BUILD FAILURE\nCompilation error"}
+			},
+		},
+	}
+	defer setCmdMock(mock)()
+
+	result, err := RunBuildInternal(t.TempDir(), ProjectTypeMaven)
+	if err != nil {
+		t.Fatalf("RunBuildInternal failed: %v", err)
+	}
+	if result.Status != "fail" {
+		t.Errorf("status should be fail, got %s", result.Status)
+	}
+	if !strings.Contains(result.ErrorLog, "BUILD FAILURE") {
+		t.Errorf("ErrorLog should contain maven output, got %s", result.ErrorLog)
 	}
 }
 

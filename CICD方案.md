@@ -1,6 +1,6 @@
 # 本地 CI/CD 流水线完整方案
 
-> 最后更新：2026-06-23（引擎迁移：PowerShell 核心逻辑迁移至 Go 原生实现，runner 包新增 detect/check/build/test/push/deploy 六个模块，覆盖率达 62.4%；跨平台兼容，不再依赖 PowerShell）  
+> 最后更新：2026-06-23（构建缓存：按源文件修改时间跳过未变更构建；暂停/续跑流水线；打开产物目录；测试覆盖率 sshutil 64%、runner 63%）  
 > 设计目标：纯自建、零外部依赖、可视化操作、通用可扩展、AI Agent 友好
 
 ---
@@ -126,14 +126,35 @@ D:\Idea\project\ci-cd\
 │   │   └── formatter.go          ← 输出格式化（文本/JSON）
 │   ├── runner\                    ← Go 原生执行引擎
 │   │   ├── runner.go             ← 主入口 + Executor 路由 + 公共 API
+│   │   ├── cache.go              ← 构建缓存（按源文件修改时间跳过未变更构建）
 │   │   ├── detect.go             ← 项目类型检测（React/Vue/Maven/Go/Rust 等）
-│   │   ├── exec.go               ← 命令执行辅助（CommandRunner 接口）
+│   │   ├── exec.go               ← 命令执行辅助（CommandRunner 接口，可 mock）
 │   │   ├── check.go              ← 代码检查（tsc/eslint/vue-tsc/mvn compile/checkstyle）
 │   │   ├── build.go              ← 构建（npm run build / mvn package）
 │   │   ├── test.go               ← 测试 + 报告解析（Vitest/Jest/Surefire/JaCoCo）
 │   │   ├── push.go               ← Git 多远程推送
 │   │   └── deploy.go             ← SSH/SFTP 部署
-│   └── serve\
+│   └── serve\                    ← HTTP 服务
+│       ├── handler.go            ← HTTP handler + 中间件 + 路由注册
+│       ├── handler_local.go      ← 本地操作（打开目录等）
+│       ├── handler_api.go        ← CI 操作 API（check/build/test）
+│       ├── handler_deploy.go     ← 推送/部署 API
+│       ├── handler_auth.go       ← 认证相关 API
+│       ├── handler_project.go    ← 项目 CRUD API
+│       ├── handler_report.go     ← 测试报告 API
+│       ├── handler_status.go     ← 步骤状态 API
+│       ├── remote.go             ← SSH/SFTP 远程管理 handler（终端+文件）
+│       ├── remote_handlers.go    ← 远程操作 handler
+│       ├── remote_servers.go     ← 独立服务器管理 API
+│       ├── local.go              ← 本地目录浏览 API
+│       ├── log.go                ← 审计日志持久化 + 统一报告 API
+│       └── web\                  ← Web UI 前端（6 个模块）
+│           ├── app-core.js       ← 工具函数、常量、API 请求
+│           ├── app-pipeline.js   ← 流水线执行、步骤管理
+│           ├── app-projects.js   ← 项目 CRUD、渲染、编辑器
+│           ├── app-reports.js    ← 测试报告、审计日志、密码修改
+│           ├── app-remote.js     ← SSH 终端、文件管理、服务器管理
+│           └── app.js            ← 入口文件
 │       ├── handler.go            ← HTTP handler + 中间件 + 路由注册
 │       ├── remote.go             ← SSH/SFTP 远程管理 handler（终端+文件）
 │       ├── log.go                ← 审计日志持久化 + 统一报告 API
@@ -277,9 +298,11 @@ ci.exe serve
 | **测试** | 工具栏 + 项目行 | 单项目或批量，测试后自动弹出报告 |
 | **推送** | 工具栏 + 项目行 | 单项目或批量 |
 | **部署** | 工具栏 + 项目行 | 单项目或批量 |
-| **▶ 流水线** | 项目行 | 对单项目执行 check→build→test→push→deploy 全链路 |
+| **▶ 流水线** | 项目行 | 对单项目执行 check→build→test→push→deploy 全链路（支持暂停续跑） |
 | **⏯ 运行流水线** | 工具栏 | 对所有项目执行全链路 |
+| **⏸ 暂停流水线** | 项目行 | 当前步骤完成后暂停，剩余步骤置灰，点击 ▶ 续跑 |
 | **🌐 自动流水线** | 工具栏开关 | ON 时单步通过后自动继续下一步 |
+| **📁 产物** | 项目行 | 一键打开构建产物目录（dist/ 或 target/），不存在则打开项目根目录 |
 | **📊 报告** | 项目行 | 查看最新测试报告弹窗 |
 | **➕ 添加项目** | 工具栏 | 编辑弹窗：名称、路径（支持📁浏览选择）、部署配置、Git 远程、规则 |
 | **🔑 修改密码** | 头部按钮 | 输入旧密码 + 新密码 + 确认 |
@@ -309,6 +332,7 @@ ci.exe serve
 | `/api/report/all` | GET | 获取所有项目测试报告（合并） |
 | `/api/rules/` | GET | 查看规则文件内容（路径后接文件名） |
 | `/api/local/ls` | GET | 列出本地目录（盘符/导航），用于项目路径浏览选择 |
+| `/api/local/open-dir` | GET | 在系统文件管理器中打开指定目录（用于一键跳转到构建产物目录） |
 | `/api/remote/projects` | GET | 获取可远程管理的服务器列表（含项目+独立服务器） |
 | `/api/remote/servers` | GET/POST | 独立服务器 CRUD |
 | `/api/remote/server` | POST | 删除独立服务器 |
@@ -406,6 +430,18 @@ ci.exe serve
 ---
 
 ## 七、CI 执行引擎（Go 原生实现）
+
+### 7.0 构建缓存（cache.go）
+
+每次 check/build 前扫描源文件（`src/`、`package.json`、`pom.xml` 等），若未变更则跳过实际执行，直接返回上次结果。
+
+| 项目类型 | 监视文件/目录 | 缓存命中效果 |
+|---------|-------------|------------|
+| React / Vue / Node | `src/`、`package.json`、`tsconfig.json` | 二次执行 15s → 0.1s |
+| Maven | `src/`、`pom.xml` | 二次执行 60s → 0.1s |
+| Go | `.`、`go.mod` | 任意 `.go` 文件变更时自动重建 |
+
+缓存文件存储于 `cache/{project}/{action}.json`，包含 `max_mod_time` 字段。上次失败的构建不会被缓存重用。
 
 ### 7.1 类型自动识别（detect.go — DetectProjectType）
 

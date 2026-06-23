@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -15,7 +16,6 @@ import (
 func RunBuildInternal(projectPath string, projectType ProjectType, ciDir ...string) (Result, error) {
 	start := time.Now()
 	var steps []Step
-	allPassed := true
 
 	// 缓存检查
 	var projectName string
@@ -31,35 +31,25 @@ func RunBuildInternal(projectPath string, projectType ProjectType, ciDir ...stri
 	case ProjectTypeReact, ProjectTypeVue:
 		stepStart := time.Now()
 		fmt.Fprintf(logWriter, "[%s] 开始 npm run build...\n", projectType)
-		result := runNpm(context.Background(), projectPath, "run", "build")
-		stepStatus := "pass"
-		if result.ExitCode != 0 {
-			stepStatus = "fail"
-			allPassed = false
+		r := runNpm(context.Background(), projectPath, "run", "build")
+		if r.ExitCode != 0 {
 			fmt.Fprintf(logWriter, "❌ npm run build 失败\n")
+		} else if _, err := os.Stat(filepath.Join(projectPath, "dist", "index.html")); err != nil {
+			fmt.Fprintf(logWriter, "⚠️ 构建产物 dist/index.html 不存在\n")
 		} else {
-			// 验证构建产物
-			if _, err := os.Stat(filepath.Join(projectPath, "dist", "index.html")); err != nil {
-				fmt.Fprintf(logWriter, "⚠️ 构建产物 dist/index.html 不存在\n")
-			} else {
-				fmt.Fprintf(logWriter, "✅ 构建成功: dist/\n")
-			}
+			fmt.Fprintf(logWriter, "✅ 构建成功: dist/\n")
 		}
-		steps = append(steps, Step{
-			Name: "build", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-		})
+		steps = append(steps, makeBuildStep("build", stepStart, r))
 
 	case ProjectTypeMaven:
 		stepStart := time.Now()
 		fmt.Fprintf(logWriter, "[Maven] 开始 mvn clean package...\n")
-		result := runMvn(context.Background(), projectPath, "clean", "package", "-DskipTests", "-q")
-		stepStatus := "pass"
-		if result.ExitCode != 0 {
-			stepStatus = "fail"
-			allPassed = false
+		r := runMvn(context.Background(), projectPath, "clean", "package", "-DskipTests", "-q")
+		s := "pass"
+		if r.ExitCode != 0 {
+			s = "fail"
 			fmt.Fprintf(logWriter, "❌ Maven 构建失败\n")
 		} else {
-			// 验证构建产物
 			matches, _ := filepath.Glob(filepath.Join(projectPath, "target", "*.jar"))
 			hasJar := false
 			for _, m := range matches {
@@ -74,37 +64,44 @@ func RunBuildInternal(projectPath string, projectType ProjectType, ciDir ...stri
 				fmt.Fprintf(logWriter, "⚠️ 未找到 *.jar 产物\n")
 			}
 		}
-		steps = append(steps, Step{
-			Name: "build", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-		})
+		_ = s
+		steps = append(steps, makeBuildStep("build", stepStart, r))
 
 	case ProjectTypeMavenMulti:
 		stepStart := time.Now()
 		fmt.Fprintf(logWriter, "[MavenMulti] 开始 mvn clean install...\n")
-		result := runMvn(context.Background(), projectPath, "clean", "install", "-DskipTests", "-q")
-		stepStatus := "pass"
-		if result.ExitCode != 0 {
-			stepStatus = "fail"
-			allPassed = false
+		r := runMvn(context.Background(), projectPath, "clean", "install", "-DskipTests", "-q")
+		if r.ExitCode != 0 {
 			fmt.Fprintf(logWriter, "❌ 多模块构建失败\n")
 		} else {
 			fmt.Fprintf(logWriter, "✅ 全部模块构建成功\n")
 		}
-		steps = append(steps, Step{
-			Name: "build", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-		})
+		steps = append(steps, makeBuildStep("build", stepStart, r))
 
 	default:
 		fmt.Fprintf(logWriter, "未知项目类型: %s，跳过构建\n", projectType)
-		steps = append(steps, Step{
-			Name: "build", Status: "skip", Duration: "0.0s",
-		})
+		steps = append(steps, Step{Name: "build", Status: "skip", Duration: "0.0s"})
 	}
 
-	duration := time.Since(start)
+	// 计算状态
 	status := "pass"
-	if !allPassed {
-		status = "fail"
+	for _, s := range steps {
+		if s.Status == "fail" {
+			status = "fail"
+			break
+		}
+	}
+
+	// 收集错误日志
+	var errParts []string
+	for _, s := range steps {
+		if s.ErrorLog != "" {
+			errParts = append(errParts, s.Name+": "+s.ErrorLog)
+		}
+	}
+	errorLog := strings.Join(errParts, "\n")
+	if len(errorLog) > 5000 {
+		errorLog = errorLog[:5000] + "...（已截断）"
 	}
 
 	// 保存缓存
@@ -112,16 +109,38 @@ func RunBuildInternal(projectPath string, projectType ProjectType, ciDir ...stri
 		saveCache(ciDir[0], projectName, "build", &BuildCache{
 			Project: projectName, Action: "build",
 			Status:   status,
-			Duration: fmt.Sprintf("%.1fs", duration.Seconds()),
+			Duration: fmt.Sprintf("%.1fs", time.Since(start).Seconds()),
 			MaxModTime: getLatestModTime(projectPath, projectType),
 		})
 	}
 
 	return Result{
 		Status:   status,
-		Duration: fmt.Sprintf("%.1fs", duration.Seconds()),
+		Duration: fmt.Sprintf("%.1fs", time.Since(start).Seconds()),
 		Steps:    steps,
+		ErrorLog: errorLog,
 	}, nil
+}
+
+// makeBuildStep 构建一个 Step，失败时自动捕获命令 stderr。
+func makeBuildStep(name string, stepStart time.Time, r ExecResult) Step {
+	s := "pass"
+	errLog := ""
+	if r.ExitCode != 0 {
+		s = "fail"
+		errLog = r.Stderr
+		if errLog == "" {
+			errLog = r.Stdout
+		}
+		if len(errLog) > 2000 {
+			errLog = errLog[:2000] + "...（已截断）"
+		}
+	}
+	return Step{
+		Name: name, Status: s,
+		Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
+		ErrorLog: errLog,
+	}
 }
 
 // containsAny 检查 s 是否包含 targets 中的任意一个子串。

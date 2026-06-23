@@ -141,9 +141,10 @@ func NewHandler(ciDir string) http.Handler {
 	// 规则文件查看
 	mux.HandleFunc("/api/rules/", handleViewRuleFile)
 
-	// 本地目录浏览（用于选择项目路径）
+	// 本地目录浏览（用于选择项目路径）+ 打开产物目录
 	mux.HandleFunc("/api/project/detect", handleProjectDetect)
 	mux.HandleFunc("/api/local/ls", handleLocalLs)
+	mux.HandleFunc("/api/local/open-dir", handleOpenDir)
 
 	// 远程管理 API
 	mux.HandleFunc("/api/remote/projects", handleRemoteDeployTargets)
