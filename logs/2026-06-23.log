@@ -275,3 +275,5 @@
 {"timestamp":"2026-06-23T21:47:14+08:00","level":"info","message":"👀 已开启 2 个项目"}
 {"timestamp":"2026-06-23T21:47:15+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
 {"timestamp":"2026-06-23T21:47:18+08:00","level":"info","message":"👀 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:54:52+08:00","level":"info","message":"🌐 自动流水线: 已开启"}
+{"timestamp":"2026-06-23T21:54:52+08:00","level":"info","message":"🌐 自动流水线: 已关闭"}

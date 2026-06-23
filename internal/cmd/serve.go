@@ -22,12 +22,13 @@ var CmdServe = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port, _ := cmd.Flags().GetString("port")
 		noOpen, _ := cmd.Flags().GetBool("no-open")
-		tray, _ := cmd.Flags().GetBool("tray")
+		isWin := runtime.GOOS == "windows"
 
 		handler := serve.NewHandler(ciDir())
 		server := &http.Server{Addr: ":" + port, Handler: handler}
 
-		if !noOpen && !tray {
+		// Windows 下自动启动托盘，不打开浏览器
+		if !noOpen && !isWin {
 			url := fmt.Sprintf("http://localhost:%s", port)
 			fmt.Printf("🌐 打开 %s\n", url)
 			openBrowser(url)
@@ -36,7 +37,7 @@ var CmdServe = &cobra.Command{
 		fmt.Printf("🚀 CI/CD Web UI 启动于 http://localhost:%s\n", port)
 		fmt.Printf("🔑 默认用户名: admin  密码: 123456\n")
 
-		if tray {
+		if isWin {
 			fmt.Println("🖥️  托盘图标已启动，右键系统托盘图标可操作")
 			go serve.InitTray(port)
 		} else {
@@ -65,7 +66,6 @@ var CmdServe = &cobra.Command{
 func init() {
 	CmdServe.Flags().String("port", "8080", "监听端口")
 	CmdServe.Flags().Bool("no-open", false, "不自动打开浏览器")
-	CmdServe.Flags().Bool("tray", false, "启动系统托盘图标（需编译时加 -tags tray）")
 }
 
 var testCiDir string
