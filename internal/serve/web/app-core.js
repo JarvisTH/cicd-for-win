@@ -210,3 +210,37 @@ function getFileIcon(name) {
   const icons = {js:'📜',ts:'📘',tsx:'⚛️',jsx:'⚛️',json:'📋',md:'📝',txt:'📄',html:'🌐',css:'🎨',xml:'📰',yml:'⚙️',yaml:'⚙️',sh:'💻',bat:'🪟',ps1:'🪟',jar:'📦',png:'🖼️',jpg:'🖼️',svg:'🎨',pdf:'📕',zip:'📦',gz:'📦'};
   return icons[ext] || '📄';
 }
+
+// ===== 下拉菜单组件 =====
+function toggleDropdown(triggerEl) {
+  const menu = triggerEl.nextElementSibling;
+  if (!menu || !menu.classList.contains('dropdown-menu')) return;
+  const isOpen = menu.classList.contains('open');
+  closeAllDropdowns();
+  if (!isOpen) menu.classList.add('open');
+}
+function closeAllDropdowns() {
+  document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+}
+// 全局点击关闭下拉菜单（点击 .dropdown 外部时关闭）
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dropdown')) closeAllDropdowns();
+});
+
+// ===== 设置菜单状态同步 =====
+// 更新工具栏「设置」下拉菜单中开关项的文案与样式
+function updateSettingsMenu() {
+  const map = [
+    { id: 'settingAuto', on: autoPipeline, label: '🌐 自动流水线' },
+    { id: 'settingConcurrent', on: concurrentPipeline, label: '⚡ 并发执行' },
+    { id: 'settingNotif', on: notificationEnabled, label: '🔔 桌面通知' },
+  ];
+  map.forEach(item => {
+    const el = document.getElementById(item.id);
+    if (!el) return;
+    el.classList.toggle('active', item.on);
+    el.classList.toggle('inactive', !item.on);
+    el.querySelector('.item-label').textContent = item.label;
+    el.querySelector('.item-state').textContent = item.on ? 'ON' : 'OFF';
+  });
+}

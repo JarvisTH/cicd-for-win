@@ -31,10 +31,16 @@
 </div>
 <div class="header-right">
   <span id="statusText">就绪</span>
-  <button class="header-btn" onclick="showAuditLog()">📋 审计日志</button>
-  <button class="header-btn" onclick="showAllReports()">📊 所有报告</button>
-  <button class="header-btn" onclick="showPasswordDialog()">🔑 修改密码</button>
   <button class="header-btn" onclick="toggleTheme()">🌓 主题</button>
+  <div class="dropdown">
+    <button class="header-btn" onclick="event.stopPropagation();toggleDropdown(this)">⋯ 更多</button>
+    <div class="dropdown-menu">
+      <div class="dropdown-item" onclick="closeAllDropdowns();showAuditLog()">📋 审计日志</div>
+      <div class="dropdown-item" onclick="closeAllDropdowns();showAllReports()">📊 所有报告</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" onclick="closeAllDropdowns();showPasswordDialog()">🔑 修改密码</div>
+    </div>
+  </div>
 </div>
 </header>
 
@@ -399,14 +405,4 @@
     <div class="form-group"><label>当前密码</label><input type="password" id="inputOldPass" placeholder="输入当前密码"></div>
     <div class="form-group"><label>新密码</label><input type="password" id="inputNewPass" placeholder="不少于 6 位"></div>
     <div class="form-group"><label>确认新密码</label><input type="password" id="inputConfirmPass" placeholder="再次输入新密码"></div>
-    <div id="passwordMsg" style="font-size:13px;margin-bottom:10px"></div>
-    <div class="modal-actions">
-      <button class="btn-outline" onclick="closePasswordDialog()">取消</button>
-      <button class="btn-primary" onclick="changePassword()">确认修改</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
-</body>
-</html>
+    <div id="passwordMsg" style="font-size:13px;margin-bottom:1
