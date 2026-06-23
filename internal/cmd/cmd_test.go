@@ -396,3 +396,14 @@ func TestProjectDetailJSON(t *testing.T) {
 }
 
 
+
+// ===================== openBrowser =====================
+
+func TestOpenBrowser_NoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("openBrowser should not panic: %v", r)
+		}
+	}()
+	openBrowser("http://localhost:8080")
+}

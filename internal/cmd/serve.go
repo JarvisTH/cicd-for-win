@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ var CmdServe = &cobra.Command{
 		if !noOpen {
 			url := fmt.Sprintf("http://localhost:%s", port)
 			fmt.Printf("🌐 打开 %s\n", url)
-			go exec.Command("cmd.exe", "/c", "start", url).Run()
+			openBrowser(url)
 		}
 
 		fmt.Printf("🚀 CI/CD Web UI 启动于 http://localhost:%s\n", port)
@@ -73,4 +74,16 @@ func ciDir() string {
 		return "."
 	}
 	return filepath.Dir(exe)
+}
+
+// openBrowser 跨平台打开 URL（Windows/Mac/Linux）
+func openBrowser(url string) {
+	switch runtime.GOOS {
+	case "windows":
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		exec.Command("open", url).Start()
+	default:
+		exec.Command("xdg-open", url).Start()
+	}
 }

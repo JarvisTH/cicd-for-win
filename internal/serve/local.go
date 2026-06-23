@@ -189,7 +189,7 @@ func detectProjectType(path string) string {
 // detectGitRemotes 执行 git remote -v 并解析为 [{name, url}] 列表（按 name 去重，取 fetch URL）。
 // 第二个返回值表示该路径是否为 Git 仓库。
 func detectGitRemotes(path string) ([]map[string]string, bool) {
-	cmd := exec.Command("git.exe", "-C", path, "remote", "-v")
+	cmd := exec.Command(findGit(), "-C", path, "remote", "-v")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, false // 非 Git 仓库或 git 不可用
@@ -222,7 +222,7 @@ func detectGitRemotes(path string) ([]map[string]string, bool) {
 
 // detectGitBranches 执行 git branch 列出所有本地分支及当前分支。
 func detectGitBranches(path string) ([]string, string) {
-	cmd := exec.Command("git.exe", "-C", path, "branch", "--list")
+	cmd := exec.Command(findGit(), "-C", path, "branch", "--list")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, ""
@@ -243,4 +243,12 @@ func detectGitBranches(path string) ([]string, string) {
 		}
 	}
 	return branches, currentBranch
+}
+
+// findGit 跨平台查找 git 可执行文件。
+func findGit() string {
+	if _, err := exec.LookPath("git"); err == nil {
+		return "git"
+	}
+	return "git.exe"
 }

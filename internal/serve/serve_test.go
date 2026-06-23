@@ -690,3 +690,12 @@ func TestHandleOpenDir_EmptyPath(t *testing.T) {
 		t.Error("empty path should return error")
 	}
 }
+
+// ===================== findGit =====================
+
+func TestFindGit_ReturnsString(t *testing.T) {
+	git := findGit()
+	if git == "" {
+		t.Error("findGit should return a non-empty string")
+	}
+}
