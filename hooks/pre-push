@@ -5,23 +5,23 @@ set "PROJECT_DIR=%~dp0.."
 set "CI_CD_DIR="
 set "SEARCH_DIR=%~dp0"
 :find_ci_dir
-if exist "%SEARCH_DIR%ci-runner.ps1" (
+if exist "%SEARCH_DIR%ci.exe" (
     set "CI_CD_DIR=%SEARCH_DIR%"
     goto found_ci_dir
 )
 set "SEARCH_DIR=%SEARCH_DIR%..\"
 if exist "%SEARCH_DIR%..\..\..\..\..\..\..\" goto find_ci_dir
-if exist "D:\Idea\project\ci-cd\ci-runner.ps1" (
+if exist "D:\Idea\project\ci-cd\ci.exe" (
     set "CI_CD_DIR=D:\Idea\project\ci-cd\"
     goto found_ci_dir
 )
-echo [pre-push] 错误: 找不到 ci-runner.ps1
+echo [pre-push] 错误: 找不到 ci.exe（CI/CD 工具）
 exit /b 1
 :found_ci_dir
 
 :: 先检查
 echo [pre-push] 阶段 1/2: 代码检查...
-powershell.exe -ExecutionPolicy Bypass -File "%CI_CD_DIR%ci-runner.ps1" -Action check -ProjectPath "%PROJECT_DIR%"
+"%CI_CD_DIR%ci.exe" check
 if %ERRORLEVEL% neq 0 (
     echo [pre-push] ❌ 代码检查未通过，推送已阻止
     exit /b 1
@@ -29,7 +29,7 @@ if %ERRORLEVEL% neq 0 (
 
 :: 再构建
 echo [pre-push] 阶段 2/2: 完整构建...
-powershell.exe -ExecutionPolicy Bypass -File "%CI_CD_DIR%ci-runner.ps1" -Action build -ProjectPath "%PROJECT_DIR%"
+"%CI_CD_DIR%ci.exe" build
 if %ERRORLEVEL% neq 0 (
     echo [pre-push] ❌ 构建失败，推送已阻止
     exit /b 1

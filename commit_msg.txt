@@ -1,0 +1,1 @@
+fix: update hooks to use ci.exe, delete old PS scripts, add serve tests
