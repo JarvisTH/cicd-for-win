@@ -253,3 +253,8 @@
 {"timestamp":"2026-06-23T18:07:30+08:00","level":"info","message":"⚙️ [pair-backend] 检查: npx tsc --noEmit | npx eslint src/ | npx vue-tsc --noEmit | npx eslint -c rules/eslint-vue.mjs src/ | mvn compile -Xlint:all | mvn checkstyle:check -Dcheckstyle.config=rules/checkstyle.xml | mvn compile -Xlint:all"}
 {"timestamp":"2026-06-23T18:07:30+08:00","level":"info","message":"✅ [pair-backend] check 通过 (0.0s)"}
 {"timestamp":"2026-06-23T18:07:30+08:00","level":"info","message":"✅ 全链路流水线执行完毕"}
+{"timestamp":"2026-06-23T21:43:07+08:00","level":"info","message":"👀 [pair] 文件监听已开启"}
+{"timestamp":"2026-06-23T21:43:08+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:43:11+08:00","level":"info","message":"🔔 桌面通知: 已开启"}
+{"timestamp":"2026-06-23T21:43:15+08:00","level":"info","message":"👀 [pair] 文件监听已开启"}
+{"timestamp":"2026-06-23T21:43:16+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
