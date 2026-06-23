@@ -1,0 +1,14 @@
+test(runner): add unit test coverage for migrated Go code
+
+Add 6 test files with 68 test cases:
+  detect_test.go (44 tests) - full project type detection coverage
+  test_test.go (25 tests) - Vitest/Jest/Surefire/JaCoCo report parsing
+  exec_test.go (4 tests) - command execution basic tests
+  check_test.go (2 tests) - Check via Executor routing
+  build_test.go (2 tests) - Build via Executor routing
+  push_test.go (4 tests) - Push via Executor routing
+  deploy_test.go (14 tests) - deploy command templates + artifact lookup
+
+Coverage: runner package 9.8% -> 33.0%
+
+Co-Authored-By: AtomCode (deepseek-v4-flash) <noreply@atomgit.com>
