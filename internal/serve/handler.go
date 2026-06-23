@@ -173,11 +173,12 @@ func findCiDir() string {
 		return ""
 	}
 	dir := filepath.Dir(exe)
-	if fileExists(filepath.Join(dir, "ci-runner.ps1")) {
+	// 检查 ci.exe 或 ci-runner.ps1（向后兼容）是否存在
+	if fileExists(filepath.Join(dir, "ci.exe")) || fileExists(filepath.Join(dir, "ci-runner.ps1")) {
 		return dir
 	}
 	parent := filepath.Dir(dir)
-	if fileExists(filepath.Join(parent, "ci-runner.ps1")) {
+	if fileExists(filepath.Join(parent, "ci.exe")) || fileExists(filepath.Join(parent, "ci-runner.ps1")) {
 		return parent
 	}
 	return ""

@@ -3,10 +3,7 @@ package serve
 import (
 	"fmt"
 	"net/http"
-	"os/exec"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -18,20 +15,25 @@ import (
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	project := r.URL.Query().Get("project")
+	projectName := r.URL.Query().Get("project")
 	ciDir := findCiDir()
 	if ciDir == "" {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
 		return
 	}
-	cmd := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass",
-		"-File", filepath.Join(ciDir, "ci-push.ps1"),
-		"-ProjectName", project)
-	err := cmd.Run()
+
+	proj := loadProjectByName(projectName)
+	if proj == nil {
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "未找到项目: " + projectName})
+		return
+	}
+	proj.CiDir = ciDir
+
+	err := runner.RunPushInternal(*proj)
 	if err == nil {
-		respondJSON(w, 200,map[string]string{"status": "pass", "message": "推送成功"})
+		respondJSON(w, 200, map[string]string{"status": "pass", "message": "推送成功"})
 	} else {
-		respondJSON(w, 200,map[string]string{"status": "fail", "message": err.Error()})
+		respondJSON(w, 200, map[string]string{"status": "fail", "message": err.Error()})
 	}
 }
 
@@ -44,7 +46,7 @@ func deployTestHandler(w http.ResponseWriter, r *http.Request) {
 	keyFile := r.URL.Query().Get("identity_file")
 
 	if host == "" || user == "" {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": "缺少主机或用户名"})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "缺少主机或用户名"})
 		return
 	}
 	port := 22
@@ -56,7 +58,7 @@ func deployTestHandler(w http.ResponseWriter, r *http.Request) {
 
 	ciDir := findCiDir()
 	if ciDir == "" {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
 		return
 	}
 
@@ -66,7 +68,7 @@ func deployTestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sshCfg, err := sshutil.BuildSSHConfig(deploy, ciDir)
 	if err != nil {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": err.Error()})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": err.Error()})
 		return
 	}
 	// 测试连接缩短超时
@@ -74,62 +76,72 @@ func deployTestHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), sshCfg)
 	if err != nil {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": err.Error()})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": err.Error()})
 		return
 	}
 	client.Close()
-	respondJSON(w, 200,map[string]string{"status": "ok", "message": "连接成功"})
+	respondJSON(w, 200, map[string]string{"status": "ok", "message": "连接成功"})
 }
 
 func deployHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	project := r.URL.Query().Get("project")
+	projectName := r.URL.Query().Get("project")
 	action := r.URL.Query().Get("action")
 	if action == "" {
 		action = "upload"
 	}
 	ciDir := findCiDir()
 	if ciDir == "" {
-		respondJSON(w, 200,map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "找不到 ci-cd 目录"})
 		return
 	}
-	cmd := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass",
-		"-File", filepath.Join(ciDir, "cd-deploy.ps1"),
-		"-ProjectName", project,
-		"-Action", action,
-	)
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
 
-	stdoutStr := strings.TrimSpace(stdout.String())
-	stderrStr := strings.TrimSpace(stderr.String())
+	proj := loadProjectByName(projectName)
+	if proj == nil {
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "未找到项目: " + projectName})
+		return
+	}
+	proj.CiDir = ciDir
 
-	detail := ""
-	if stderrStr != "" {
-		detail = stderrStr
-	} else if stdoutStr != "" {
-		detail = stdoutStr
-	} else if err != nil {
-		detail = err.Error()
+	var result runner.Result
+	var err error
+
+	switch action {
+	case "upload":
+		result, err = runner.RunDeployInternal(*proj, ciDir)
+	case "start", "stop", "status", "test":
+		result, err = runner.RunDeployAction(*proj, ciDir, action)
+	default:
+		respondJSON(w, 200, map[string]string{"status": "error", "message": "未知部署操作: " + action})
+		return
 	}
 
-	if err == nil {
+	detail := ""
+	if err != nil {
+		detail = err.Error()
+	} else {
+		detail = result.ErrorLog
+	}
+
+	if err == nil && result.Status == "pass" {
 		saveStepStatus(ciDir, runner.Result{
-			Project:  project,
+			Project:  projectName,
 			Action:   "deploy",
 			Status:   "pass",
-			Duration: detail,
+			Duration: result.Duration,
 		})
-		respondJSON(w, 200,map[string]string{"status": "pass", "message": "部署成功", "detail": detail})
+		respondJSON(w, 200, map[string]string{"status": "pass", "message": "部署成功", "detail": detail})
 	} else {
+		errMsg := detail
+		if errMsg == "" {
+			errMsg = "部署失败"
+		}
 		saveStepStatus(ciDir, runner.Result{
-			Project:  project,
+			Project:  projectName,
 			Action:   "deploy",
 			Status:   "fail",
-			ErrorLog: detail,
+			ErrorLog: errMsg,
 		})
-		respondJSON(w, 200,map[string]string{"status": "fail", "message": "部署失败", "detail": detail})
+		respondJSON(w, 200, map[string]string{"status": "fail", "message": "部署失败", "detail": errMsg})
 	}
 }

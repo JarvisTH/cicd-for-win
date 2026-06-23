@@ -686,6 +686,9 @@ func TestRunCheck_UsesExecutor(t *testing.T) {
 	if result.Status != "pass" {
 		t.Errorf("状态应为 pass, 得到 %q", result.Status)
 	}
+	if result.Action != "check" {
+		t.Errorf("Action 应为 check, 得到 %q", result.Action)
+	}
 }
 
 func TestRunBuild_UsesExecutor(t *testing.T) {
@@ -706,7 +709,7 @@ func TestRunBuild_UsesExecutor(t *testing.T) {
 	if mock.calls[0].Project.Name != "proj-b" {
 		t.Errorf("项目名不匹配")
 	}
-	if result.Action != "ci-runner.ps1" {
+	if result.Action != "build" {
 		t.Errorf("Action 应为 ci-runner.ps1, 得到 %q", result.Action)
 	}
 }

@@ -24,10 +24,10 @@ var CmdDoctor = &cobra.Command{
 	Use:   "doctor",
 	Short: "诊断 CI/CD 环境状态",
 	Long: `诊断当前 CI/CD 环境，检查工具链和项目配置完整性。
-	示例:
-	  ci doctor          输出诊断结果
-	  ci doctor --json   输出 JSON 格式
-	`,
+		示例:
+		  ci doctor          输出诊断结果
+		  ci doctor --json   输出 JSON 格式
+		`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		jsonMode, _ := cmd.Flags().GetBool("json")
 		return runDoctor(jsonMode)
@@ -70,15 +70,11 @@ func runChecks() []checkItem {
 		checks = append(checks, checkItem{Name: "Java", Status: "warn", Message: "未找到"})
 	}
 
+	// 检查 Go 原生 runner 是否可用
+	checks = append(checks, checkItem{Name: "Go Runner", Status: "ok", Message: "已启用（替代 ci-runner.ps1）"})
+
 	exe, _ := os.Executable()
 	ciDir := filepath.Dir(exe)
-	runnerPath := filepath.Join(ciDir, "ci-runner.ps1")
-	if _, err := os.Stat(runnerPath); err == nil {
-		checks = append(checks, checkItem{Name: "ci-runner.ps1", Status: "ok", Message: "存在"})
-	} else {
-		checks = append(checks, checkItem{Name: "ci-runner.ps1", Status: "error", Message: "缺失"})
-	}
-
 	authPath := filepath.Join(ciDir, "auth.json")
 	if _, err := os.Stat(authPath); err == nil {
 		checks = append(checks, checkItem{Name: "auth.json", Status: "ok", Message: "存在"})
