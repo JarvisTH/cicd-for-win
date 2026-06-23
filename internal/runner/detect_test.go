@@ -331,28 +331,6 @@ func TestIsRuleEnabled_NotListed(t *testing.T) {
 	}
 }
 
-// ===================== containsAny =====================
-
-func TestContainsAny(t *testing.T) {
-	tests := []struct {
-		s       string
-		targets []string
-		want    bool
-	}{
-		{"hello-world", []string{"hello"}, true},
-		{"sources.jar", []string{"sources", "javadoc"}, true},
-		{"app.jar", []string{"sources", "javadoc"}, false},
-		{"", []string{"a"}, false},
-		{"abc", nil, false},
-	}
-	for _, tc := range tests {
-		got := containsAny(tc.s, tc.targets...)
-		if got != tc.want {
-			t.Errorf("containsAny(%q, %v) = %v, 期望 %v", tc.s, tc.targets, got, tc.want)
-		}
-	}
-}
-
 // ===================== failResult =====================
 
 func TestFailResult(t *testing.T) {

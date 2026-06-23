@@ -1,6 +1,11 @@
 # CI/CD 命令行工具
 
+> **定位**: 面向开发者的本地 CI/CD 辅助工具，非 Jenkins/GitLab CI 替代品。
+> **理念**: 单二进制、零外部服务依赖、手动触发、AI Agent 友好。
+> **适用场景**: 开发者在个人电脑上对项目执行代码检查 → 构建 → 测试 → 推送 → 部署。
+
 本地 CI/CD 工具链，覆盖完整流程：代码检查 → 测试 → 构建 → 推送 → 部署。
+所有核心逻辑由 **Go 原生执行**（不依赖 PowerShell），跨平台可编译运行。
 
 ---
 
@@ -45,6 +50,7 @@ ci.exe serve
 | 命令 | 说明 |
 |------|------|
 | `ci hooks [project]` | 安装 Git hooks |
+| `ci doctor` | 诊断环境状态 |
 | `ci describe` | 输出工具 Schema（供 AI Agent 发现） |
 | `ci --help` | 查看全部命令帮助 |
 | `ci --json` | 以 JSON 格式输出（适合脚本调用） |
@@ -84,9 +90,11 @@ ci deploy pair-front                # 部署到生产环境
 
 ## 环境要求
 
-- Windows 10/11（PowerShell 5.1+）
+- Go 1.22+（仅编译时需要，分发只需 ci.exe 单文件）
 - 前端项目需安装 Node.js
 - 后端项目需安装 JDK 17+ 和 Maven
+
+> 已迁移至 Go 原生引擎，不再依赖 PowerShell。
 
 ---
 
@@ -109,7 +117,7 @@ ci deploy pair-front                # 部署到生产环境
 |---------|---------|------------|
 | React | `npx tsc --noEmit` | 项目自带的 `eslint.config.js` |
 | Vue | `npx vue-tsc --noEmit` | `rules/eslint-vue.mjs` |
-| Maven | `mvn compile -Xlint:all` | `rules/checkstyle.xml` |
+| Maven | `mvn compile -q` | `rules/checkstyle.xml` |
 
 > React 项目使用自身的 ESLint 配置，Vue 和后端项目由 CI/CD 统一提供规则。
 

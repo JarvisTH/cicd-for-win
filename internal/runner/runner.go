@@ -183,6 +183,12 @@ func parseRuleStates(args []string) map[string]bool {
 // defaultExec 包级默认执行器，Run* 函数通过它执行。测试时可替换为 MockExecutor。
 var defaultExec Executor = &GoExecutor{}
 
+// ResetForTest 重置包级全局变量到默认值，供测试使用。
+func ResetForTest() {
+	defaultExec = &GoExecutor{}
+	defaultCmdRunner = &osCommandRunner{}
+}
+
 // RunCheck 对项目执行代码检查。
 func RunCheck(project config.Project) (Result, error) {
 	result, err := defaultExec.Run(project, "ci-runner.ps1", "-Action", "check", "-ProjectPath", project.Path)

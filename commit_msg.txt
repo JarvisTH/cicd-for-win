@@ -1,0 +1,7 @@
+docs: sync README + design doc with Go engine migration
+
+Update README.txt to reflect Go native engine (no PowerShell)
+Add positioning section to CICD方案.md defining app scope
+Add ResetForTest to runner package for global var isolation
+
+Co-Authored-By: AtomCode (deepseek-v4-flash) <noreply@atomgit.com>

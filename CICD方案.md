@@ -1,11 +1,30 @@
 # 本地 CI/CD 流水线完整方案
 
-> 最后更新：2026-06-20（安全加固完成：服务器密码 AES-GCM 加密存储+自动迁移、SSH known_hosts TOFU 校验、CSRF 防护、下载 token 机制、并发锁、原子写入、路径穿越校验、SSH 连接回收；前端拆分为 index.html/app.css/app.js；按钮布局分组重构；补全 download-token 等 31 个 API 路由文档）  
+> 最后更新：2026-06-23（引擎迁移：PowerShell 核心逻辑迁移至 Go 原生实现，runner 包新增 detect/check/build/test/push/deploy 六个模块，覆盖率达 62.4%；跨平台兼容，不再依赖 PowerShell）  
 > 设计目标：纯自建、零外部依赖、可视化操作、通用可扩展、AI Agent 友好
 
 ---
 
-## 一、总体架构
+## 项目定位
+
+| 维度 | 定位 |
+|------|------|
+| **是什么** | 面向开发者的**本地 CI/CD 辅助工具**，在个人电脑上对代码执行检查→构建→测试→推送→部署 |
+| **不是** | **不是** Jenkins / GitLab CI / GitHub Actions 的替代品。不提供 Webhook 事件驱动、多租户、RBAC、分布式流水线 |
+| **核心理念** | **单二进制** — ci.exe 一个文件复制即用。**零服务依赖** — 不安装/配置任何后台服务。**手动触发** — 用户主动操作，不做自动轮询。**AI 增强** — 输出 MCP/OpenAI Schema，可被 AI Agent 调用 |
+| **目标用户** | 个人开发者、小团队。每人在本机运行自己的 CI/CD 实例 |
+| **不支持的场景** | 团队共享 CI 服务器、生产环境自动部署流水线、多用户权限管理、Git push 自动触发构建 |
+
+### 设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **零外部依赖** | 仅用 Go 标准库，无需任何第三方 CI 工具或脚本引擎 |
+| **跨平台** | Go 原生实现，不依赖 Windows PowerShell，可在 Linux/macOS 编译运行 |
+| **单二进制分发** | `ci.exe` 一个文件复制即用，无需安装运行环境 |
+| **全可视化** | 用户不碰任何配置文件，增删项目、改密码、看报告都在浏览器操作 |
+| **AI Agent 友好** | 内置 MCP 服务器 + OpenAI Function Calling Schema，大模型可直接调用 |
+| **全链路自动化** | 支持自动流水线（通过后自动执行下一步，失败自动终止） |
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -26,7 +45,15 @@
 │  │  └────────────────────────────────────────────────────┘  │  │
 │  │                                                          │  │
 │  │  ┌─ internal/ ─────────────────────────────────────────┐  │  │
-│  │  │  runner/       ← 调用 PowerShell 后端引擎             │  │  │
+│  │  │  runner/       ← Go 原生执行引擎（替代 PowerShell）    │  │  │
+│  │  │  │  ├─ detect.go     ← 项目类型检测                   │  │  │
+│  │  │  │  ├─ exec.go       ← 命令执行辅助                   │  │  │
+│  │  │  │  ├─ check.go      ← 代码检查                       │  │  │
+│  │  │  │  ├─ build.go      ← 构建                          │  │  │
+│  │  │  │  ├─ test.go       ← 测试 + 报告解析                │  │  │
+│  │  │  │  ├─ push.go       ← Git 推送                      │  │  │
+│  │  │  │  ├─ deploy.go     ← SSH/SFTP 部署                 │  │  │
+│  │  │  │  └─ runner.go     ← 主入口 + Executor 路由         │  │  │
 │  │  │  config/       ← 读取 projects.json + auth.json      │  │  │
 │  │  │  output/       ← 统一输出格式（文本/JSON）             │  │  │
 │  │  │  serve/        ← Web 服务器 + 13 个 API 路由          │  │  │
@@ -34,10 +61,7 @@
 │  │  │    └─ web/index.html ← 单页 Web UI 控制台             │  │  │
 │  │  └────────────────────────────────────────────────────┘  │  │
 │  │                                                          │  │
-│  │  ┌────────────────────────────────────────────────────┐  │  │
-│  │  │  PowerShell 后端引擎（ci-runner / cd-deploy）        │  │  │
-│  │  │  ci.exe 通过 os/exec 调用，复用已有逻辑               │  │  │
-│  │  └────────────────────────────────────────────────────┘  │  │
+│  │  （历史 PowerShell 脚本仍保留，供 master 分支回退使用）     │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌─ 数据存储 ────────────────────────────────────────────┐   │
@@ -63,7 +87,8 @@
 
 | 原则 | 说明 |
 |------|------|
-| **零外部依赖** | 仅用 Go 标准库 + Windows 自带 PowerShell，不装任何第三方 CI 工具 |
+| **零外部依赖** | 仅用 Go 标准库，无需任何第三方 CI 工具或脚本引擎 |
+| **跨平台** | Go 原生实现，不依赖 Windows PowerShell，可在 Linux/macOS 编译运行 |
 | **单二进制分发** | `ci.exe` 一个文件复制即用，无需安装运行环境 |
 | **全可视化** | 用户不碰任何配置文件，增删项目、改密码、看报告都在浏览器操作 |
 | **AI Agent 友好** | 内置 MCP 服务器 + OpenAI Function Calling Schema，大模型可直接调用 |
@@ -88,18 +113,25 @@ D:\Idea\project\ci-cd\
 │   │   └── auth.go               ← auth.json 读写 + SHA256 加密
 │   ├── output\
 │   │   └── formatter.go          ← 输出格式化（文本/JSON）
-│   ├── runner\
-│   │   └── runner.go             ← 调用 PowerShell 引擎 + 报告持久化
+│   ├── runner\                    ← Go 原生执行引擎
+│   │   ├── runner.go             ← 主入口 + Executor 路由 + 公共 API
+│   │   ├── detect.go             ← 项目类型检测（React/Vue/Maven/Go/Rust 等）
+│   │   ├── exec.go               ← 命令执行辅助（CommandRunner 接口）
+│   │   ├── check.go              ← 代码检查（tsc/eslint/vue-tsc/mvn compile/checkstyle）
+│   │   ├── build.go              ← 构建（npm run build / mvn package）
+│   │   ├── test.go               ← 测试 + 报告解析（Vitest/Jest/Surefire/JaCoCo）
+│   │   ├── push.go               ← Git 多远程推送
+│   │   └── deploy.go             ← SSH/SFTP 部署
 │   └── serve\
 │       ├── handler.go            ← HTTP handler + 中间件 + 路由注册
 │       ├── remote.go             ← SSH/SFTP 远程管理 handler（终端+文件）
 │       ├── log.go                ← 审计日志持久化 + 统一报告 API
 │       └── web\index.html        ← Web UI 前端（单页 HTML）
 │
-├── ci-runner.ps1                 ← CI 执行引擎（check/build/test）
-├── cd-deploy.ps1                 ← SSH/SFTP 部署引擎
-├── ci-push.ps1                   ← 多远程仓库推送
-├── ci-mcp-server.ps1             ← MCP 协议服务器（AI Agent 集成）
+├── ci-runner.ps1                 ← [历史] 已被 Go 替代，保留供 master 分支回退
+├── cd-deploy.ps1                 ← [历史] 已被 Go 替代
+├── ci-push.ps1                   ← [历史] 已被 Go 替代
+├── ci-mcp-server.ps1             ← MCP 协议服务器（AI Agent 集成，仍保留与 Go 版共存）
 ├── build-and-run-web.bat         ← 一键编译 + 启动脚本
 │
 ├── projects.json                 ← 项目配置（Web UI 自动管理）
@@ -132,7 +164,7 @@ D:\Idea\project\ci-cd\
 | **语言** | Go 1.22+ |
 | **CLI 框架** | Cobra（Kubernetes、Hugo、Docker 等使用） |
 | **产物** | 单文件 `ci.exe`（Windows） |
-| **后端引擎** | PowerShell 脚本（Go 通过 `os/exec` 调用） |
+| **后端引擎** | Go 原生实现（detect/check/build/test/push/deploy 全在 Go 中） |
 
 ### 3.2 完整命令列表（27 个）
 
@@ -313,7 +345,7 @@ ci.exe serve
 
 ## 六、测试报告系统
 
-### 6.1 报告生成（ci-runner.ps1 Invoke-Test）
+### 6.1 报告生成（Go test.go — RunTestInternal）
 
 | 项目类型 | 测试框架检测 | 报告来源 | 覆盖率 |
 |---------|-------------|---------|--------|
@@ -362,9 +394,9 @@ ci.exe serve
 
 ---
 
-## 七、CI 执行引擎（ci-runner.ps1）
+## 七、CI 执行引擎（Go 原生实现）
 
-### 7.1 类型自动识别
+### 7.1 类型自动识别（detect.go — DetectProjectType）
 
 | 检测特征 | 判定类型 |
 |---------|---------|
@@ -378,14 +410,16 @@ ci.exe serve
 | `Cargo.toml` | Rust |
 | `go.mod` | Go |
 
-### 7.2 各阶段命令
+### 7.2 各阶段命令（check.go / build.go / test.go）
 
 | 类型 | check | build | test |
 |------|-------|-------|------|
-| React | `npx tsc --noEmit` + `npx eslint src/` | `npm run build` | Jest/Vitest 自动检测 |
-| Vue | `npx vue-tsc --noEmit` + `npx eslint -c rules/` | `npm run build` | Vitest/Jest 自动检测 |
-| Maven | `mvn compile -Xlint:all` + `mvn checkstyle:check` | `mvn clean package -DskipTests` | `mvn test -Dmaven.test.failure.ignore=true` |
-| MavenMulti | 父目录执行 `mvn compile` | `mvn clean install -DskipTests` | 遍历子模块 Surefire |
+| React | `npx tsc --noEmit` + `npx eslint src/` | `npm run build` | 自动检测 Vitest/Jest，解析 JSON 报告 |
+| Vue | `npx vue-tsc --noEmit` + `npx eslint -c rules/` | `npm run build` | 自动检测 Vitest/Jest，解析 JSON 报告 |
+| Maven | `mvn compile -q` + `mvn checkstyle:check` | `mvn clean package -DskipTests -q` | `mvn test` + 解析 Surefire XML + JaCoCo |
+| MavenMulti | 父目录执行 `mvn compile -q` | `mvn clean install -DskipTests -q` | 遍历子模块 Surefire 报告 |
+
+> 以上命令全部由 Go 原生执行（通过 `exec.CommandContext`），不再需要 PowerShell 调用。`rules/` 目录下的规则文件通过 Go 直接读取后传给 npx/mvn。
 
 ### 7.3 代码检查规则开关
 
@@ -416,14 +450,16 @@ check 阶段支持按单条规则单独启用/禁用，配置保存在 `projects
 
 ---
 
-## 八、部署引擎（cd-deploy.ps1）
+## 八、部署引擎（Go 原生实现 — deploy.go）
 
 ### 8.1 部署阶段
 
 | 阶段 | 协议 | 说明 |
 |------|------|------|
-| 上传 | SFTP / SCP | 将构建产物传输到目标服务器 |
-| 控制 | SSH | 远程执行启动/停止/状态查询 |
+| 上传 | SFTP（Go `pkg/sftp` 库） | 将构建产物传输到目标服务器 |
+| 控制 | SSH（Go `golang.org/x/crypto/ssh` 库） | 远程执行启动/停止/状态查询 |
+
+> 部署引擎已从 `cd-deploy.ps1` 迁移到 Go 原生实现，使用 `pkg/sftp` 进行 SFTP 上传，使用 `golang.org/x/crypto/ssh` 执行远程命令。不再依赖本机 OpenSSH 命令行工具。
 
 ### 8.2 各项目类型部署方式
 
@@ -577,7 +613,6 @@ async function runAction(action, project) {
 | 项目 | 实现 |
 |------|------|
 | Go 端 | `internal/sshutil` 实现 TOFU 回调，首次连接自动接受并写入 `.known_hosts`，后续严格校验，密钥不匹配则拒绝 |
-| PowerShell 端 | `cd-deploy.ps1` 使用 `StrictHostKeyChecking=accept-new` + `UserKnownHostsFile` |
 | known_hosts 文件 | `.known_hosts`，0600 权限 |
 
 ### 10.5 CSRF 防护
@@ -608,7 +643,7 @@ Web API 对所有状态变更方法（POST/PUT/DELETE）要求自定义请求头
 | 敏感文件权限 | 含密码的文件以 `0600` 权限写入 |
 | 路径穿越校验 | `handleViewRuleFile` 用 `IsPathSafe` 二次校验，禁止访问 rules 目录外文件 |
 | 输入校验 | `projectSaveHandler` 强类型反序列化 + 路径存在性/认证类型/端口/步骤 ID 校验 |
-| 命令注入防护 | `ci-runner.ps1` 自定义命令用 `& $cmd @args` 直接调用，禁用 `Invoke-Expression` |
+| 命令注入防护 | `exec.go` 的 `runCommand` 通过 `exec.CommandContext` 直接调用，天然防命令注入 |
 | SSH 连接回收 | 后台 reaper 每 5 分钟清理空闲超 30 分钟的连接，进程退出时统一关闭 |
 
 ---
@@ -635,25 +670,23 @@ Web API 对所有状态变更方法（POST/PUT/DELETE）要求自定义请求头
 | `ci_doctor` | 无参数 |
 | `ci_project_list` | 无参数 |
 
-### 11.2 MCP 服务器（ci-mcp-server.ps1）
+### 11.2 MCP 服务器
+
+ci.exe 内置 MCP 协议支持（通过 `ci describe --format mcp` 输出标准 Schema），可直接被 AI Agent 调用。
+
+> 旧的 `ci-mcp-server.ps1` 脚本已不再需要，Go 原生 MCP Schema 输出已覆盖全部 13 个工具。
 
 ```json
-// .atomcode/mcp.json 配置
+// .atomcode/mcp.json 配置（使用 ci.exe 本地调用）
 {
   "mcpServers": {
     "ci-cd": {
-      "command": "powershell.exe",
-      "args": ["-ExecutionPolicy", "Bypass", "-File", "D:\\Idea\\project\\ci-cd\\ci-mcp-server.ps1"]
+      "command": "D:\\idea\\project\\ci-cd\\ci.exe",
+      "args": ["describe", "--format", "mcp"]
     }
   }
 }
 ```
-
-MCP 服务器特性：
-- `tools/list` → 返回 13 个工具的完整 Schema
-- `tools/call` → 按工具类型独立处理参数（passwd/report/serve/doctor 各有独立逻辑）
-- 输出格式 → JSON-RPC 2.0 标准
-- 无需配置，Host 自动发现
 
 ### 11.3 OpenAI Function Calling
 
@@ -688,16 +721,16 @@ $ ci doctor
   ✅ Git                  已安装
   ✅ Node.js              已安装
   ✅ Maven                已安装
-  ✅ ci-runner.ps1        存在
+  ✅ Go Runner            已启用（替代 ci-runner.ps1）
   ✅ auth.json            存在
-  ✅ 项目配置                 3 个项目, 2 启用, 1 已配置部署
+  ✅ 项目配置                 2 个项目, 2 启用, 2 已配置部署
 ──────────────────────────────────────────────────
 ✅ 环境正常
 ```
 
 检查项目：
 - 工具链：Go / Git / Node.js / Java / Maven
-- 配置文件：`ci-runner.ps1` / `auth.json`
+- 引擎：Go Runner（替代了旧的 ci-runner.ps1）
 - 项目配置：数量、启用数、部署配置完整数
 
 ---
@@ -707,14 +740,14 @@ $ ci doctor
 | 依赖 | 用途 | 来源 |
 |------|------|------|
 | Go 1.22+ | 编译 ci.exe | 仅编译时需要 |
-| PowerShell 5.1+ | 运行后端脚本 | Windows 自带 |
-| `ssh.exe` | SSH 远程执行 | Win10 1809+ 自带 |
-| `sftp.exe` | SFTP 文件传输 | Win10 1809+ 自带 |
+| `ssh.exe` | SSH 远程执行 | Win10 1809+ 自带（可选用，Go 原生 SSH 库可替代） |
+| `sftp.exe` | SFTP 文件传输 | Win10 1809+ 自带（可选用，Go 原生 SFTP 库可替代） |
 | Git | 版本控制 + hooks | 已安装 |
 | Node.js + npm | 前端构建 | 项目需要 |
 | JDK + Maven | 后端构建 | 项目需要 |
 
 **零外部第三方 CI 工具依赖**（不安装 Jenkins / GitLab Runner 等）。
+**零脚本引擎依赖**（不再需要 PowerShell）。
 
 ---
 
