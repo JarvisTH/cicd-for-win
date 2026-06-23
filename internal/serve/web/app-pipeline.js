@@ -100,7 +100,67 @@ function renderPipelineConfig(project) {
   renderPipelineSteps();
 }
 
-function renderPipelineSteps() { /* full implementation from original app.js */ }
+function renderPipelineSteps() {
+  const container = document.getElementById('pipelineConfig');
+  container.innerHTML = '';
+  const enabledSteps = pipelineEditingSteps.filter(s => s.enabled).map(s => stepLabels[s.id] || s.id);
+  const overview = document.createElement('div');
+  overview.style.cssText = 'padding:8px 12px;background:var(--accent-subtle);border-radius:var(--r-sm);font-size:12px;color:var(--accent);font-weight:600;margin-bottom:6px';
+  overview.innerHTML = `📋 当前流水线: ${enabledSteps.length > 0 ? enabledSteps.join(' → ') : '<span style="color:var(--danger)">无启用步骤</span>'}`;
+  container.appendChild(overview);
+  pipelineEditingSteps.forEach((step, index) => {
+    const div = document.createElement('div');
+    div.className = 'pipeline-step' + (step.enabled ? '' : ' disabled');
+    div.draggable = true;
+    div.dataset.index = index;
+    const hasCustomCmd = step.command && step.command.trim();
+    div.innerHTML = `
+      <div class="step-header">
+        <span class="drag-handle">⠿</span>
+        <span class="step-label">${stepLabels[step.id] || step.id}</span>
+        ${hasCustomCmd ? '<span style="font-size:9px;color:var(--warning);font-weight:700;padding:1px 5px;background:var(--warning-subtle);border-radius:9999px">自定义</span>' : ''}
+        <button class="expand-btn" onclick="toggleStepExpand(${index})">${hasCustomCmd ? '编辑' : '高级'} ▾</button>
+        <button class="step-toggle-btn ${step.enabled ? 'enabled' : 'disabled'}" onclick="togglePipelineStep(${index})">${step.enabled ? '✅ 启用' : '⏸ 禁用'}</button>
+      </div>
+      <div class="step-body">
+        <div class="step-defaults">
+          <div class="step-defaults-title">📋 默认命令${currentEditProjectType !== 'Unknown' ? ` · 当前类型: <span style="color:var(--accent)">${currentEditProjectType}</span>` : ''}</div>
+          <table class="defaults-table">
+            <thead><tr><th style="width:90px">类型</th><th>默认命令</th><th>参数</th></tr></thead>
+            <tbody>${(stepDefaults[step.id] && stepDefaults[step.id].items || []).map(it => {
+              const types = it.type.split('/').map(t => t.split(' ')[0].trim());
+              const isActive = currentEditProjectType !== 'Unknown' && (it.type === currentEditProjectType || types.includes(currentEditProjectType) || it.type === '通用');
+              return `<tr class="${isActive ? 'active-row' : ''}"><td>${it.type}</td><td><code>${it.command}</code></td><td><code>${it.args || '—'}</code></td></tr>`;
+            }).join('')}</tbody>
+          </table>
+          ${stepDefaults[step.id] && stepDefaults[step.id].note ? `<div class="step-defaults-note">💡 ${stepDefaults[step.id].note}</div>` : ''}
+        </div>
+        <div class="cmd-row">
+          <label>命令</label>
+          <input type="text" placeholder="${(() => { const def = getDefaultCmdForStep(step.id, currentEditProjectType); return def ? `留空使用: ${def.command}` : '留空使用默认命令'; })()}" value="${step.command || ''}" oninput="updateStepCommand(${index}, this.value)">
+        </div>
+        <div class="cmd-row">
+          <label>参数</label>
+          <input type="text" placeholder="${(() => { const def = getDefaultCmdForStep(step.id, currentEditProjectType); return def ? (def.args ? `留空使用: ${def.args}` : '无默认参数') : '留空使用默认参数'; })()}" value="${step.args || ''}" oninput="updateStepArgs(${index}, this.value)">
+        </div>
+      </div>
+    `;
+    div.addEventListener('dragstart', (e) => { div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', index); });
+    div.addEventListener('dragend', () => { div.classList.remove('dragging'); document.querySelectorAll('.pipeline-step').forEach(el => el.classList.remove('drag-over')); });
+    div.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; div.classList.add('drag-over'); });
+    div.addEventListener('dragleave', () => { div.classList.remove('drag-over'); });
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIndex = parseInt(div.dataset.index);
+      if (fromIndex === toIndex) return;
+      const [moved] = pipelineEditingSteps.splice(fromIndex, 1);
+      pipelineEditingSteps.splice(toIndex, 0, moved);
+      renderPipelineSteps();
+    });
+    container.appendChild(div);
+  });
+}
 function togglePipelineStep(index) { if (pipelineEditingSteps[index]) { pipelineEditingSteps[index].enabled = !pipelineEditingSteps[index].enabled; renderPipelineSteps(); } }
 function toggleStepExpand(index) { const el = document.getElementById('pipelineConfig').children[index + 1]; if (el) el.classList.toggle('expanded'); }
 function updateStepCommand(index, value) { if (pipelineEditingSteps[index]) pipelineEditingSteps[index].command = value; }

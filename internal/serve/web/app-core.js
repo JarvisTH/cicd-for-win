@@ -17,6 +17,55 @@ const stepDescs = {
   push: '推送代码到 Git 远程仓库',
   deploy: '部署到远程服务器（SFTP + 启动）'
 };
+const stepDefaults = {
+  check: {
+    desc: '代码检查（类型检查 + Lint）',
+    items: [
+      { type: 'React', command: 'npx tsc --noEmit', args: '' },
+      { type: 'React', command: 'npx eslint', args: 'src/' },
+      { type: 'Vue', command: 'npx vue-tsc --noEmit', args: '' },
+      { type: 'Vue', command: 'npx eslint', args: '-c rules/eslint-vue.mjs src/' },
+      { type: 'Maven', command: 'mvn compile', args: '-Xlint:all' },
+      { type: 'Maven', command: 'mvn checkstyle:check', args: '-Dcheckstyle.config=rules/checkstyle.xml' },
+      { type: 'MavenMulti', command: 'mvn compile', args: '-Xlint:all' },
+    ],
+    note: '按项目类型自动选择，多条命令顺序执行'
+  },
+  build: {
+    desc: '编译构建',
+    items: [
+      { type: 'React/Vue', command: 'npm run build', args: '' },
+      { type: 'Maven', command: 'mvn clean package', args: '-DskipTests' },
+      { type: 'MavenMulti', command: 'mvn clean install', args: '-DskipTests' },
+    ],
+    note: ''
+  },
+  test: {
+    desc: '单元测试',
+    items: [
+      { type: 'React/Vue (Vitest)', command: 'npx vitest run', args: '--reporter=json' },
+      { type: 'React/Vue (Jest)', command: 'npx jest', args: '--json --coverage' },
+      { type: 'Maven/MavenMulti', command: 'mvn test', args: '-Dmaven.test.failure.ignore=true' },
+    ],
+    note: '自动检测测试框架并解析报告（含覆盖率）'
+  },
+  push: {
+    desc: 'Git 推送',
+    items: [
+      { type: '通用', command: 'git push', args: '--all' },
+    ],
+    note: '推送到所有已启用的远程仓库'
+  },
+  deploy: {
+    desc: '部署',
+    items: [
+      { type: 'React/Vue', command: 'SFTP 上传 dist/', args: '→ $remote_dir/' },
+      { type: 'Maven', command: 'SFTP 上传 target/*.jar', args: '→ $remote_dir/' },
+      { type: 'MavenMulti', command: 'SFTP 上传各子模块 jar', args: '→ $remote_dir/services/' },
+    ],
+    note: '上传后远程执行启动/重启命令'
+  },
+};
 
 const ruleTypeColors = {
   React: 'tag-react', Vue: 'tag-vue', Maven: 'tag-maven',
