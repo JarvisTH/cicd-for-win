@@ -149,6 +149,27 @@ if ('Notification' in window && notificationEnabled) {
 // 文件监听（项目级）
 if (!window._watchingProjects) window._watchingProjects = {};
 
+// 工具栏全局监听开关
+async function toggleWatch() {
+  const btn = document.getElementById('watchToggle');
+  const isOn = btn.textContent.includes('ON');
+  if (isOn) {
+    await fetch('/api/watch/stop', { headers: {'X-Requested-With': 'XMLHttpRequest'} });
+    btn.textContent = '👀 监听:OFF'; btn.classList.remove('auto-on');
+    window._watchingProjects = {}; log('👀 文件监听已关闭', 'info');
+  } else {
+    const enabled = projects.filter(p => p.enabled);
+    let count = 0;
+    for (const p of enabled) {
+      const data = await api('/api/watch/start?project=' + encodeURIComponent(p.name));
+      if (data && data.status === 'ok') { window._watchingProjects[p.name] = true; count++; }
+    }
+    if (count > 0) { btn.textContent = '👀 监听:ON'; btn.classList.add('auto-on'); log(`👀 已开启 ${count} 个项目`, 'info'); }
+  }
+  renderProjects();
+}
+
+// 每个项目行的独立监听开关
 async function toggleWatchProject(name) {
   const btn = document.querySelector(`[onclick*="'${name}'"]`);
   if (window._watchingProjects[name]) {

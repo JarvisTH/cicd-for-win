@@ -258,3 +258,20 @@
 {"timestamp":"2026-06-23T21:43:11+08:00","level":"info","message":"🔔 桌面通知: 已开启"}
 {"timestamp":"2026-06-23T21:43:15+08:00","level":"info","message":"👀 [pair] 文件监听已开启"}
 {"timestamp":"2026-06-23T21:43:16+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:45:11+08:00","level":"info","message":"🔔 桌面通知: 已关闭"}
+{"timestamp":"2026-06-23T21:45:12+08:00","level":"info","message":"🔔 桌面通知: 已开启"}
+{"timestamp":"2026-06-23T21:45:15+08:00","level":"info","message":"🔔 桌面通知: 已关闭"}
+{"timestamp":"2026-06-23T21:45:17+08:00","level":"info","message":"🔔 桌面通知: 已开启"}
+{"timestamp":"2026-06-23T21:45:19+08:00","level":"info","message":"🔔 桌面通知: 已关闭"}
+{"timestamp":"2026-06-23T21:45:24+08:00","level":"info","message":"👀 [pair] 文件监听已开启"}
+{"timestamp":"2026-06-23T21:45:25+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:46:27+08:00","level":"info","message":"📁 已打开: D:\\IDEA\\Project\\pair\\dist"}
+{"timestamp":"2026-06-23T21:46:31+08:00","level":"info","message":"📁 已打开: D:\\IDEA\\Project\\pair-backend\\target"}
+{"timestamp":"2026-06-23T21:46:39+08:00","level":"info","message":"🔍 检测到 1 个 Git 远程，点击「从 Git 检测」导入"}
+{"timestamp":"2026-06-23T21:47:10+08:00","level":"info","message":"👀 已开启 2 个项目"}
+{"timestamp":"2026-06-23T21:47:11+08:00","level":"info","message":"👀 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:47:13+08:00","level":"info","message":"👀 已开启 2 个项目"}
+{"timestamp":"2026-06-23T21:47:13+08:00","level":"info","message":"👀 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:47:14+08:00","level":"info","message":"👀 已开启 2 个项目"}
+{"timestamp":"2026-06-23T21:47:15+08:00","level":"info","message":"👀 [pair] 文件监听已关闭"}
+{"timestamp":"2026-06-23T21:47:18+08:00","level":"info","message":"👀 文件监听已关闭"}
