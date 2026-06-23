@@ -1,0 +1,1 @@
+feat: add missing tools to AI schema

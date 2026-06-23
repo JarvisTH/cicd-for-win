@@ -2,8 +2,12 @@ package serve
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"ci-cd/internal/config"
 	"ci-cd/internal/runner"
@@ -41,10 +45,9 @@ func apiHandler(action string) http.HandlerFunc {
 		proj.CiDir = ciDir
 
 		// 处理自定义命令
-		customCommand, _ := findPipelineStepCommand(ciDir, projectName, action)
+		customCommand, customArgs := findPipelineStepCommand(ciDir, projectName, action)
 		if customCommand != "" {
-			// 自定义命令场景暂不支持直接路由，走原有逻辑
-			respondJSON(w, 200, map[string]string{"error": "自定义命令暂未迁移"})
+			runCustomCommand(w, proj, action, customCommand, customArgs)
 			return
 		}
 
@@ -89,5 +92,46 @@ func apiHandler(action string) http.HandlerFunc {
 		if data, mErr := json.Marshal(result); mErr == nil {
 			w.Write(data)
 		}
+	}
+}
+
+// runCustomCommand 执行用户自定义的流水线步骤命令。
+func runCustomCommand(w http.ResponseWriter, proj *config.Project, action, command, args string) {
+	start := time.Now()
+
+	cmd := exec.Command(command)
+	if args != "" {
+		parts := strings.Fields(args)
+		cmd = exec.Command(command, parts...)
+	}
+	if proj != nil && proj.Path != "" {
+		cmd.Dir = proj.Path
+	}
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	elapsed := time.Since(start)
+
+	result := runner.Result{
+		Project:  proj.Name,
+		Action:   action,
+		Duration: fmt.Sprintf("%.1fs", elapsed.Seconds()),
+	}
+	if err != nil {
+		result.Status = "fail"
+		result.ErrorLog = strings.TrimSpace(stderr.String())
+		if result.ErrorLog == "" {
+			result.ErrorLog = err.Error()
+		}
+	} else {
+		result.Status = "pass"
+	}
+
+	saveStepStatus(proj.CiDir, result)
+	if data, mErr := json.Marshal(result); mErr == nil {
+		w.Write(data)
 	}
 }

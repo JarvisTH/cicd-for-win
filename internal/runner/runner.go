@@ -423,6 +423,7 @@ func GenerateSchema(format string) string {
 				Type: "object",
 				Properties: map[string]ParamProp{
 					"project": {Type: "string", Description: "项目名称（可选，不传则部署所有项目）"},
+					"target":  {Type: "string", Description: "部署目标（可选，production/staging，默认 production）"},
 				},
 			},
 		},
@@ -458,12 +459,14 @@ func GenerateSchema(format string) string {
 			},
 		},
 		{
-			Name: "ci_report", Description: "查看或删除指定项目的测试报告。查看最新报告、列出历史、或删除指定报告。",
+			Name: "ci_report", Description: "查看、列出或删除指定项目的测试报告。返回结构化报告（含通过数、失败数、覆盖率、失败详情）。",
 			Parameters: &ToolParam{
 				Type: "object",
 				Properties: map[string]ParamProp{
 					"project": {Type: "string", Description: "项目名称（必填）"},
-					"delete":  {Type: "string", Description: "要删除的报告 ID（可选，通过 --list 可获取所有报告的 ID）"},
+					"list":    {Type: "string", Description: "设为 true 则列出所有历史报告 ID，而非查看最新（可选）"},
+					"delete":  {Type: "string", Description: "要删除的报告 ID（可选，先 --list 获取 ID）"},
+					"json":    {Type: "string", Description: "设为 true 则输出 JSON 格式（可选）"},
 				},
 				Required: []string{"project"},
 			},
@@ -479,6 +482,123 @@ func GenerateSchema(format string) string {
 		},
 		{
 			Name: "ci_doctor", Description: "诊断 CI/CD 环境状态，检查工具链（Go/Git/Node/Java/Maven）和配置文件完整性。",
+		},
+		{
+			Name: "ci_log", Description: "查询或删除审计日志。可指定日期、级别过滤、关键字搜索。不传参数查询今天全部日志。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"date":    {Type: "string", Description: "日志日期（可选，格式 YYYY-MM-DD，默认今天）"},
+					"level":   {Type: "string", Description: "日志级别过滤（可选，info/warn/error）"},
+					"keyword": {Type: "string", Description: "关键字搜索（可选）"},
+					"delete":  {Type: "string", Description: "要删除的日期（可选，格式 YYYY-MM-DD）"},
+					"limit":   {Type: "string", Description: "返回条数（可选，默认 100）"},
+				},
+			},
+		},
+		{
+			Name: "ci_rules_list", Description: "列出可用的代码检查规则文件。",
+		},
+		{
+			Name: "ci_rules_view", Description: "查看指定规则文件的内容。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"file": {Type: "string", Description: "规则文件名（必填，如 eslint-vue.mjs 或 checkstyle.xml）"},
+				},
+				Required: []string{"file"},
+			},
+		},
+		{
+			Name: "ci_server_list", Description: "列出所有已配置的独立服务器。",
+		},
+		{
+			Name: "ci_server_add", Description: "添加一台独立服务器（用于远程文件管理和终端访问）。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"name":      {Type: "string", Description: "服务器名称（必填）"},
+					"host":      {Type: "string", Description: "主机地址（必填，IP 或域名）"},
+					"user":      {Type: "string", Description: "SSH 用户名（必填）"},
+					"port":      {Type: "string", Description: "SSH 端口（可选，默认 22）"},
+					"auth_type": {Type: "string", Description: "认证方式（可选，key/password，默认 key）"},
+					"key_path":  {Type: "string", Description: "SSH 私钥路径（可选，auth_type=key 时使用）"},
+					"password":  {Type: "string", Description: "SSH 密码（可选，auth_type=password 时使用）"},
+					"note":      {Type: "string", Description: "备注说明（可选）"},
+				},
+				Required: []string{"name", "host", "user"},
+			},
+		},
+		{
+			Name: "ci_server_delete", Description: "删除一台独立服务器。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"name": {Type: "string", Description: "服务器名称（必填）"},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name: "ci_remote_ls", Description: "列出远程服务器上的目录内容。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"server": {Type: "string", Description: "服务器名称（必填，项目名或独立服务器名）"},
+					"path":   {Type: "string", Description: "远程路径（可选，默认 /）"},
+					"source": {Type: "string", Description: "服务器来源（可选，project/standalone，默认 project）"},
+				},
+				Required: []string{"server"},
+			},
+		},
+		{
+			Name: "ci_remote_download", Description: "从远程服务器下载文件到本地。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"server": {Type: "string", Description: "服务器名称（必填）"},
+					"path":   {Type: "string", Description: "远程文件路径（必填）"},
+					"source": {Type: "string", Description: "服务器来源（可选，project/standalone）"},
+				},
+				Required: []string{"server", "path"},
+			},
+		},
+		{
+			Name: "ci_remote_upload", Description: "上传本地文件到远程服务器。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"server": {Type: "string", Description: "服务器名称（必填）"},
+					"file":   {Type: "string", Description: "本地文件路径（必填）"},
+					"path":   {Type: "string", Description: "远程目标目录（必填）"},
+					"source": {Type: "string", Description: "服务器来源（可选，project/standalone）"},
+				},
+				Required: []string{"server", "file", "path"},
+			},
+		},
+		{
+			Name: "ci_remote_delete", Description: "删除远程服务器上的文件或目录。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"server": {Type: "string", Description: "服务器名称（必填）"},
+					"path":   {Type: "string", Description: "远程路径（必填）"},
+					"source": {Type: "string", Description: "服务器来源（可选，project/standalone）"},
+				},
+				Required: []string{"server", "path"},
+			},
+		},
+		{
+			Name: "ci_remote_mkdir", Description: "在远程服务器上创建目录。",
+			Parameters: &ToolParam{
+				Type: "object",
+				Properties: map[string]ParamProp{
+					"server": {Type: "string", Description: "服务器名称（必填）"},
+					"path":   {Type: "string", Description: "远程目录路径（必填）"},
+					"source": {Type: "string", Description: "服务器来源（可选，project/standalone）"},
+				},
+				Required: []string{"server", "path"},
+			},
 		},
 		{
 			Name: "ci_project_list", Description: "列出所有项目的详细信息，包括路径、版本、Git 分支、部署目标和构建产物状态。",
