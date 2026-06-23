@@ -21,6 +21,8 @@ if (!window._stepErrors) window._stepErrors = {};
 // 页面加载后刷新
 document.addEventListener('DOMContentLoaded', () => {
   refreshProjects();
+  // 初始化右上角「更多」菜单中设置开关项的显示状态
+  if (typeof updateSettingsMenu === 'function') updateSettingsMenu();
   // 广播输入框键盘事件
   const input = document.getElementById('broadcastInput');
   if (input) {

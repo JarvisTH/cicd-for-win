@@ -121,6 +121,8 @@ func NewHandler(ciDir string) http.Handler {
 	mux.HandleFunc("/api/project", projectSaveHandler)
 	mux.HandleFunc("/api/deploy", deployHandler)
 	mux.HandleFunc("/api/deploy/test", deployTestHandler)
+	mux.HandleFunc("/api/pipeline/run", pipelineRunHandler)
+	mux.HandleFunc("/api/pipeline/run-all", pipelineRunAllHandler)
 	mux.HandleFunc("/api/steps/status", stepStatusHandler)
 	mux.HandleFunc("/api/steps/status/clear", stepStatusClearHandler)
 	mux.HandleFunc("/api/auth/status", authStatusHandler)

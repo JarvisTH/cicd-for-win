@@ -74,18 +74,24 @@ function renderActionButtons(p) {
   const allSteps = getProjectAllSteps(p);
   const stepMap = {};
   if (p.pipeline && p.pipeline.steps) p.pipeline.steps.forEach(s => stepMap[s.id] = s.enabled);
-  let html = '';
-  // 步骤按钮：紧凑图标形式（仅图标 + title 提示），大幅节省宽度
-  allSteps.forEach(s => {
-    if (stepMap[s] !== false) {
-      const icon = stepActionIcons[s] || '•';
-      const title = btnLabels[s];
-      html += s === 'deploy'
-        ? `<button class="action-btn btn-danger step-icon-btn" onclick="runDeploy('${p.name}')" title="${title}">${icon}</button>`
-        : `<button class="action-btn ${btnStyles[s]} step-icon-btn" onclick="runAction('${s}','${p.name}')" title="${title}">${icon}</button>`;
-    }
-  });
-  html += `<button class="action-btn btn-primary" onclick="runSinglePipeline('${p.name}')" style="font-size:10px">▶ 流水线</button>`;
+  const enabledSteps = allSteps.filter(s => stepMap[s] !== false);
+  let html = '<div class="action-row">';
+  // 1. 流水线主按钮 + 暂停按钮（仅图标，并排显示）
+  html += `<button class="action-btn btn-primary step-icon-btn" onclick="runSinglePipeline('${p.name}')" title="开始流水线">▶</button>`;
+  html += `<button class="action-btn btn-warning step-icon-btn" onclick="cancelPipeline('${p.name}')" title="暂停流水线">⏸</button>`;
+  // 2. 步骤下拉（单步执行，排第二）
+  html += `<div class="dropdown" style="display:inline-block">
+    <button class="action-btn btn-outline step-trigger-btn" onclick="event.stopPropagation();toggleDropdown(this)" title="单步执行">📋 步骤 ▾</button>
+    <div class="dropdown-menu">
+      ${enabledSteps.map(s => {
+        const icon = stepActionIcons[s] || '•';
+        const label = btnLabels[s];
+        const cls = s === 'deploy' ? 'dropdown-item danger' : 'dropdown-item';
+        const fn = s === 'deploy' ? `runDeploy('${p.name}')` : `runAction('${s}','${p.name}')`;
+        return `<div class="${cls}" onclick="closeAllDropdowns();${fn}">${icon} ${label}</div>`;
+      }).join('')}
+    </div>
+  </div>`;
   // 次要操作收入 ⋯ 溢出菜单
   const watching = !!(window._watchingProjects && window._watchingProjects[p.name]);
   html += `<div class="dropdown" style="display:inline-block">
@@ -98,10 +104,10 @@ function renderActionButtons(p) {
         <span class="item-label">👀 文件监听</span><span class="item-state">${watching ? 'ON' : 'OFF'}</span>
       </div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" onclick="closeAllDropdowns();cancelPipeline('${p.name}')">⏸ 取消流水线</div>
       <div class="dropdown-item danger" onclick="closeAllDropdowns();deleteProject('${p.name}')">🗑 删除项目</div>
     </div>
   </div>`;
+  html += '</div>';
   return html;
 }
 

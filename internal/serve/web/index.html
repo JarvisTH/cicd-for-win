@@ -35,6 +35,19 @@
   <div class="dropdown">
     <button class="header-btn" onclick="event.stopPropagation();toggleDropdown(this)">⋯ 更多</button>
     <div class="dropdown-menu">
+      <div class="dropdown-item inactive" id="settingAuto" onclick="event.stopPropagation();toggleAutoPipeline()">
+        <span class="item-label">🌐 自动流水线</span><span class="item-state">OFF</span>
+      </div>
+      <div class="dropdown-item inactive" id="settingConcurrent" onclick="event.stopPropagation();toggleConcurrent()">
+        <span class="item-label">⚡ 并发执行</span><span class="item-state">OFF</span>
+      </div>
+      <div class="dropdown-item inactive" id="settingNotif" onclick="event.stopPropagation();toggleNotification()">
+        <span class="item-label">🔔 桌面通知</span><span class="item-state">OFF</span>
+      </div>
+      <div class="dropdown-item inactive" id="settingWatch" onclick="event.stopPropagation();toggleWatch()">
+        <span class="item-label">👀 全局监听</span><span class="item-state">OFF</span>
+      </div>
+      <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="closeAllDropdowns();showAuditLog()">📋 审计日志</div>
       <div class="dropdown-item" onclick="closeAllDropdowns();showAllReports()">📊 所有报告</div>
       <div class="dropdown-divider"></div>
@@ -69,24 +82,6 @@
   <div class="toolbar">
     <div class="toolbar-group">
       <button class="btn-primary" onclick="runPipelineAll()">⏯ 运行流水线</button>
-      <div class="dropdown">
-        <button class="btn-outline" onclick="event.stopPropagation();toggleDropdown(this)">⚙ 设置 ▾</button>
-        <div class="dropdown-menu">
-          <div class="dropdown-item inactive" id="settingAuto" onclick="event.stopPropagation();toggleAutoPipeline()">
-            <span class="item-label">🌐 自动流水线</span><span class="item-state">OFF</span>
-          </div>
-          <div class="dropdown-item inactive" id="settingConcurrent" onclick="event.stopPropagation();toggleConcurrent()">
-            <span class="item-label">⚡ 并发执行</span><span class="item-state">OFF</span>
-          </div>
-          <div class="dropdown-item inactive" id="settingNotif" onclick="event.stopPropagation();toggleNotification()">
-            <span class="item-label">🔔 桌面通知</span><span class="item-state">OFF</span>
-          </div>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-item inactive" id="settingWatch" onclick="event.stopPropagation();toggleWatch()">
-            <span class="item-label">👀 全局监听</span><span class="item-state">OFF</span>
-          </div>
-        </div>
-      </div>
     </div>
     <span class="toolbar-divider"></span>
     <div class="toolbar-group">
@@ -96,7 +91,7 @@
   </div>
 
   <table class="project-table" id="projectTable">
-    <thead><tr><th>项目</th><th>类型</th><th>版本</th><th>分支/提交</th><th>状态</th><th>配置</th><th>流水线</th><th>进度</th><th style="width:280px">操作</th></tr></thead>
+    <thead><tr><th>项目</th><th>类型</th><th>版本</th><th>分支/提交</th><th>状态</th><th>配置</th><th>流水线</th><th>进度</th><th style="width:180px">操作</th></tr></thead>
     <tbody id="projectBody"></tbody>
   </table>
 

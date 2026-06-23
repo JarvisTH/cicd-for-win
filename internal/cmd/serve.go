@@ -28,10 +28,8 @@ var CmdServe = &cobra.Command{
 		server := &http.Server{Addr: ":" + port, Handler: handler}
 
 		// Windows 下自动启动托盘，不打开浏览器
-		if !noOpen && !isWin {
-			url := fmt.Sprintf("http://localhost:%s", port)
-			fmt.Printf("🌐 打开 %s\n", url)
-			openBrowser(url)
+		if !noOpen {
+			openBrowser(fmt.Sprintf("http://localhost:%s", port))
 		}
 
 		fmt.Printf("🚀 CI/CD Web UI 启动于 http://localhost:%s\n", port)

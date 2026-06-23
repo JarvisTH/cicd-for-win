@@ -2,6 +2,6 @@
   "project": "pair",
   "action": "build",
   "status": "fail",
-  "duration": "13.0s",
+  "duration": "82.2s",
   "max_mod_time": "2026-06-23T13:53:12.6568145+08:00"
 }

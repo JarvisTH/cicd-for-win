@@ -3,16 +3,23 @@
 package serve
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/getlantern/systray"
 )
+
+//go:embed icon.ico
+var trayIconBytes []byte
 
 var apiBase string
 
@@ -22,6 +29,7 @@ func RunTray(serverURL string, onExit func()) {
 }
 
 func setupTray() {
+	systray.SetIcon(trayIconBytes)
 	systray.SetTitle("CI/CD")
 	systray.SetTooltip("本地 CI/CD 工具")
 
@@ -36,6 +44,7 @@ func setupTray() {
 
 	pipeMenu := systray.AddMenuItem("▶ 流水线", "")
 	pipeAll := pipeMenu.AddSubMenuItem("跑全部项目", "")
+	pipeAll.SetTooltip("执行所有已启用项目的完整流水线")
 	pipeMenu.AddSubMenuItem("─", "").Disable()
 
 	stepMenu := systray.AddMenuItem("⚙ 单步骤", "")
@@ -48,7 +57,11 @@ func setupTray() {
 
 	quitItem := systray.AddMenuItem("⏹ 退出", "")
 
-	go loadProjectMenus(watchMenu, pipeMenu, stepMenu, watchAll, pipeAll)
+	// 延迟 2 秒加载项目列表，等待 HTTP 服务器就绪
+	go func() {
+		time.Sleep(2 * time.Second)
+		loadProjectMenus(watchMenu, pipeMenu, stepMenu, watchAll, pipeAll)
+	}()
 
 	go func() {
 		for {
@@ -60,9 +73,14 @@ func setupTray() {
 			case <-notifItem.ClickedCh:
 				if notifItem.Checked() { notifItem.Uncheck() } else { notifItem.Check() }
 			case <-pipeAll.ClickedCh:
-				go func() { logMsg(apiGet("/api/pipeline/run-all")) }()
+				pipeAll.SetTitle("⏳ 跑全部项目（运行中）")
+				go func() {
+					logMsg(apiGet("/api/pipeline/run-all"))
+					pipeAll.SetTitle("跑全部项目")
+				}()
 			case <-quitItem.ClickedCh:
 				systray.Quit()
+				os.Exit(0)
 				return
 			}
 		}
@@ -84,9 +102,25 @@ func loadProjectMenus(watchMenu, pipeMenu, stepMenu *systray.MenuItem, watchAll,
 				if item.Checked() { apiGet("/api/watch/stop?project=" + n); item.Uncheck() } else { apiGet("/api/watch/start?project=" + n); item.Check() }
 			}
 		}(name, watchItem)
-		pipeItem := pipeMenu.AddSubMenuItem("  "+name, "")
+		pipeItem := pipeMenu.AddSubMenuItem("  ▶ "+name, "")
+		pipeItem.SetTooltip("执行 " + name + " 的完整流水线")
 		go func(n string, item *systray.MenuItem) {
-			for range item.ClickedCh { apiGet("/api/pipeline/run?project=" + n) }
+			for range item.ClickedCh {
+				item.SetTitle("  ⏳ " + n + "（运行中）")
+				go func(it *systray.MenuItem, projName string) {
+					resp := apiGet("/api/pipeline/run?project=" + projName)
+					// 解析 JSON 响应判断成功/失败
+					title := "  ▶ " + projName
+					if strings.Contains(resp, `"status":"ok"`) {
+						title = "  ✅ " + projName
+					} else if strings.Contains(resp, `"status":"error"`) || resp == "" {
+						title = "  ❌ " + projName
+					}
+					it.SetTitle(title)
+					time.Sleep(3 * time.Second)
+					it.SetTitle("  ▶ " + projName)
+				}(item, n)
+			}
 		}(name, pipeItem)
 		stepProj := stepMenu.AddSubMenuItem("  "+name, "")
 		for _, step := range []string{"check", "build", "test", "push", "deploy"} {
@@ -101,13 +135,13 @@ func loadProjectMenus(watchMenu, pipeMenu, stepMenu *systray.MenuItem, watchAll,
 }
 
 func fetchProjects() []map[string]any {
-	resp, err := http.Get(apiBase + "/api/projects")
+	// 直接读取 projects.json（同进程有文件权限，无需经过 HTTP API）
+	data, err := os.ReadFile("projects.json")
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
 	var result map[string][]map[string]any
-	if json.NewDecoder(resp.Body).Decode(&result) != nil {
+	if json.Unmarshal(data, &result) != nil {
 		return nil
 	}
 	return result["projects"]

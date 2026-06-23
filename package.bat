@@ -21,7 +21,7 @@ if not exist "%SOURCE%ci-runner.ps1" (
 :: Build if needed
 if not exist "%SOURCE%ci.exe" (
     echo Building ci.exe...
-    "D:\software\go\bin\go.exe" build -ldflags="-s -w" -o "%SOURCE%ci.exe" "%SOURCE%cmd\ci"
+    "D:\software\go\bin\go.exe" build -ldflags="-s -w" -o "%SOURCE%ci.exe" ".\cmd\ci"
     if errorlevel 1 (
         echo ERROR: Build failed
         pause

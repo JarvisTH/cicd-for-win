@@ -8,13 +8,12 @@ cd /d "%~dp0"
 set "GOROOT=D:\software\go"
 set "PATH=%GOROOT%\bin;%PATH%"
 
-:: Kill any leftover ci.exe to free port 8080
 taskkill /f /im ci.exe >nul 2>&1
 
 echo ============================================
 echo  [1/2] Building CI/CD tool...
 echo ============================================
-go build -o "%~dp0ci.exe" "%~dp0cmd\ci"
+go build -o "%~dp0ci.exe" ".\cmd\ci"
 if errorlevel 1 (
     echo.
     echo [!!] Build FAILED. Check code or Go environment.
@@ -26,7 +25,6 @@ if errorlevel 1 (
 echo [OK] Build success - ci.exe generated
 echo.
 
-:: Verify ci.exe exists before starting
 if not exist "%~dp0ci.exe" (
     echo [!!] ci.exe not found after build
     pause
@@ -38,10 +36,11 @@ echo  [2/2] Starting Web UI...
 echo ============================================
 echo URL:  http://localhost:8080
 echo User: admin / 123456
-echo Press Ctrl+C to stop
 echo.
-"%~dp0ci.exe" serve
+echo  Starting in background (no console window)...
+echo  To stop: right-click tray icon - exit
+echo.
 
-echo.
-echo Service stopped.
-pause
+REM Use VBS to launch ci.exe silently (no cmd window)
+start "" /b wscript //nologo "%~dp0start-web.vbs"
+exit /b 0
