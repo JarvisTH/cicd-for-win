@@ -240,9 +240,15 @@ func RunDeploy(project config.Project, target string) (Result, error) {
 
 // RunHooks 安装 Git hooks 到项目。
 func RunHooks(project config.Project) error {
-	hooksScript := filepath.Join(project.CiDir, "install-hooks.bat")
-	cmd := exec.Command("cmd.exe", "/c", hooksScript)
-	return cmd.Run()
+	hooksScript := filepath.Join(project.CiDir, "install-hooks")
+	// 跨平台：Windows 用 .bat，其他用 .sh
+	if _, err := os.Stat(hooksScript + ".bat"); err == nil {
+		return exec.Command("cmd.exe", "/c", hooksScript+".bat").Run()
+	}
+	if _, err := os.Stat(hooksScript + ".sh"); err == nil {
+		return exec.Command("sh", hooksScript+".sh").Run()
+	}
+	return fmt.Errorf("找不到 install-hooks 脚本 (%s.bat / %s.sh)", hooksScript, hooksScript)
 }
 
 // RunStatus 查看项目当前状态。

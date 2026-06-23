@@ -787,14 +787,14 @@ $ ci doctor
 | 依赖 | 用途 | 来源 |
 |------|------|------|
 | Go 1.22+ | 编译 ci.exe | 仅编译时需要 |
-| `ssh.exe` | SSH 远程执行 | Win10 1809+ 自带（可选用，Go 原生 SSH 库可替代） |
-| `sftp.exe` | SFTP 文件传输 | Win10 1809+ 自带（可选用，Go 原生 SFTP 库可替代） |
-| Git | 版本控制 + hooks | 已安装 |
-| Node.js + npm | 前端构建 | 项目需要 |
-| JDK + Maven | 后端构建 | 项目需要 |
+| `ssh.exe` | SSH 远程执行 | 可选用（Go 原生 SSH 库替代） |
+| `sftp.exe` | SFTP 文件传输 | 可选用（Go 原生 SFTP 库替代） |
+| Git | 版本控制 + hooks | 依赖 |
+| Node.js + npm | 前端项目构建 | 项目需要 |
+| JDK + Maven | 后端项目构建 | 项目需要 |
 
 **零外部第三方 CI 工具依赖**（不安装 Jenkins / GitLab Runner 等）。
-**零脚本引擎依赖**（不再需要 PowerShell）。
+**跨平台**：核心引擎纯 Go 实现，`ci.exe` 单文件复制即用，`status/`、`cache/`、`logs/` 自动创建。
 
 ---
 
@@ -811,28 +811,38 @@ $ ci doctor
 | 审计日志 | `logs/audit-YYYY-MM-DD.jsonl` | 自动写入（前端 log()）+ Web UI/CLI 查删 | JSONL |
 | 代码规则 | `rules/` | 手动编辑 + CLI `rules list/view` | xml/mjs |
 | 规则开关 | `projects.json` 的 `rules` 字段 | Web UI 项目编辑勾选 | JSON |
-| Git hooks | `hooks/` | 手动编辑 | batch |
-| Web 前端 | `web/` | 内嵌（index.html + app.css + app.js） | HTML/CSS/JS |
+| Git hooks | `hooks/` | 手动编辑或 `ci hooks` | batch / shell |
+| 构建缓存 | `cache/{project}/{action}.json` | 自动创建 + 自动失效 | JSON |
+| Web 前端 | `web/` | 内嵌（6 个 JS 模块） | HTML/CSS/JS |
 
 ---
 
 ## 十五、启动与使用
 
+### 安装
+
 ```bash
-# 1. 编译
+# 1. 编译（Windows/Linux/macOS 均支持）
 go build -o ci.exe ci-cd/cmd/ci
 
+# 或直接从发布页面下载对应平台的预编译二进制
+```
+
+### 首次使用
+
+```bash
 # 2. 启动 Web UI
 ci.exe serve
-# 浏览器打开 http://localhost:8080
+# 浏览器自动打开 http://localhost:8080
 # 默认账号: admin / 123456
 
-# 3. 添加项目（Web UI 中点击「+ 添加项目」）
+# 3. 在浏览器中添加项目（填写项目路径，自动检测类型）
 
 # 4. 开始使用
 #   - 点击「检查」「构建」「测试」「推送」「部署」
 #   - 打开 🌐 自动:ON 体验全链路自动化
-#   - 点击 ▶ 流水线 执行完整流程
+#   - 点击 ▶ 流水线 执行完整流程（支持 ⏸ 暂停续跑）
+#   - 点击 📁 产物 一键打开构建产物目录
 
 # 5. 查看报告
 ci report pair-front          # CLI 查看
@@ -845,3 +855,13 @@ ci passwd admin newPass       # 修改密码
 # 7. 环境诊断
 ci doctor
 ```
+
+### 跨平台说明
+
+| 平台 | 支持状态 |
+|------|---------|
+| Windows 10/11 | ✅ 完全支持 |
+| Linux | ✅ 需重新编译，核心功能完整 |
+| macOS | ✅ 需重新编译，核心功能完整 |
+
+核心 CI 引擎不依赖 Windows 特定功能，`ci.exe` 单文件复制到任意目录即可运行，`status/`、`cache/`、`logs/` 等数据目录自动创建。项目路径通过 Web UI 自配置，不强绑定任何固定路径。

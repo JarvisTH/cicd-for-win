@@ -50,7 +50,11 @@ func runChecks() []checkItem {
 		checks = append(checks, checkItem{Name: "Go", Status: "warn", Message: "未找到"})
 	}
 
-	if _, err := exec.LookPath("git.exe"); err == nil {
+	gitName := "git"
+	if _, err := exec.LookPath("git"); err != nil {
+		gitName = "git.exe"
+	}
+	if _, err := exec.LookPath(gitName); err == nil {
 		checks = append(checks, checkItem{Name: "Git", Status: "ok", Message: "已安装"})
 	} else {
 		checks = append(checks, checkItem{Name: "Git", Status: "warn", Message: "未找到"})
