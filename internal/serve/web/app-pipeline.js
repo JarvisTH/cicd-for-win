@@ -70,6 +70,7 @@ function showStepError(project, step) {
     <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">项目: <strong style="color:var(--text-primary)">${project}</strong> · 行数: ${errLines.length}</div>
     ${bodyHtml}
   </div>`;
+  modal.classList.add('active');
 }
 
 // 生成流水线概览文本
