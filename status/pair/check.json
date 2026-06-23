@@ -1,1 +1,1 @@
-{"project":"pair","action":"check","status":"pass","duration":"9.5s","command":"powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action check -ProjectPath D:\\IDEA\\Project\\pair -Json"}
+{"project":"pair","action":"check","status":"fail","duration":"90.8s","command":"check","steps":[{"name":"tsc","status":"pass","duration":"2.6s"},{"name":"eslint","status":"fail","duration":"88.1s"}]}

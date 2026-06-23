@@ -5,8 +5,33 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+// appendStep 创建并追加一个步骤，失败时捕获错误输出。
+func appendStep(steps *[]Step, name string, stepStart time.Time, execResult ExecResult) string {
+	status := "pass"
+	errLog := ""
+	if execResult.ExitCode != 0 {
+		status = "fail"
+		// 优先使用 stderr，fallback 到 stdout
+		errLog = execResult.Stderr
+		if errLog == "" {
+			errLog = execResult.Stdout
+		}
+		// 限制错误日志长度，避免界面渲染卡顿
+		if len(errLog) > 2000 {
+			errLog = errLog[:2000] + "...（已截断）"
+		}
+	}
+	*steps = append(*steps, Step{
+		Name: name, Status: status,
+		Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
+		ErrorLog: errLog,
+	})
+	return status
+}
 
 // RunCheckInternal 对项目执行代码检查。
 // 支持 React（tsc + eslint）、Vue（vue-tsc + eslint）、Maven（compile + checkstyle）。
@@ -15,115 +40,73 @@ func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates ma
 	start := time.Now()
 	var steps []Step
 	allPassed := true
+	var errLogs []string
 
 	switch projectType {
 	case ProjectTypeReact:
 		if isRuleEnabled(ruleStates, "tsc") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[React] 开始 TypeScript 类型检查...\n")
-			result := runNpxWithTimeout(projectPath, "tsc", "--noEmit")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runNpxWithTimeout(projectPath, "tsc", "--noEmit")
+			if appendStep(&steps, "tsc", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ TypeScript 类型检查失败\n")
+				errLogs = append(errLogs, "tsc: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "tsc", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 		if isRuleEnabled(ruleStates, "eslint") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[React] 开始 ESLint 检查...\n")
-			result := runNpxWithTimeout(projectPath, "eslint", "src/")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runNpxWithTimeout(projectPath, "eslint", "src/")
+			if appendStep(&steps, "eslint", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ ESLint 检查失败\n")
+				errLogs = append(errLogs, "eslint: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "eslint", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 
 	case ProjectTypeVue:
 		if isRuleEnabled(ruleStates, "tsc") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[Vue] 开始 vue-tsc 类型检查...\n")
-			result := runNpxWithTimeout(projectPath, "vue-tsc", "--noEmit")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runNpxWithTimeout(projectPath, "vue-tsc", "--noEmit")
+			if appendStep(&steps, "tsc", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ vue-tsc 类型检查失败\n")
+				errLogs = append(errLogs, "vue-tsc: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "tsc", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 		if isRuleEnabled(ruleStates, "eslint") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[Vue] 开始 ESLint 检查...\n")
-			// Vue 项目使用 CI/CD 自有规则文件
 			eslintConfig := filepath.Join(filepath.Dir(projectPath), "rules", "eslint-vue.mjs")
-			result := runNpxWithTimeout(projectPath, "eslint", "-c", eslintConfig, "src/")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runNpxWithTimeout(projectPath, "eslint", "-c", eslintConfig, "src/")
+			if appendStep(&steps, "eslint", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ ESLint 检查失败\n")
+				errLogs = append(errLogs, "eslint: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "eslint", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 
 	case ProjectTypeMaven:
 		if isRuleEnabled(ruleStates, "compile") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[Maven] 开始编译检查...\n")
-			result := runMvn(context.Background(), projectPath, "compile", "-q")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runMvn(context.Background(), projectPath, "compile", "-q")
+			if appendStep(&steps, "compile", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ Maven 编译检查失败\n")
+				errLogs = append(errLogs, "compile: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "compile", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 		if isRuleEnabled(ruleStates, "checkstyle") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[Maven] 开始 Checkstyle 检查...\n")
 			checkstyleConfig := filepath.Join(filepath.Dir(projectPath), "rules", "checkstyle.xml")
-			result := runMvn(context.Background(), projectPath, "checkstyle:check", "-Dcheckstyle.config="+checkstyleConfig)
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runMvn(context.Background(), projectPath, "checkstyle:check", "-Dcheckstyle.config="+checkstyleConfig)
+			if appendStep(&steps, "checkstyle", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ Checkstyle 检查失败\n")
+				errLogs = append(errLogs, "checkstyle: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "checkstyle", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 
 	case ProjectTypeMavenMulti:
 		if isRuleEnabled(ruleStates, "compile") {
-			stepStart := time.Now()
 			fmt.Fprintf(logWriter, "[MavenMulti] 开始多模块编译检查...\n")
-			result := runMvn(context.Background(), projectPath, "compile", "-q")
-			stepStatus := "pass"
-			if result.ExitCode != 0 {
-				stepStatus = "fail"
+			r := runMvn(context.Background(), projectPath, "compile", "-q")
+			if appendStep(&steps, "compile", time.Now(), r) == "fail" {
 				allPassed = false
-				fmt.Fprintf(logWriter, "❌ 多模块编译检查失败\n")
+				errLogs = append(errLogs, "compile: "+r.Stderr)
 			}
-			steps = append(steps, Step{
-				Name: "compile", Status: stepStatus, Duration: fmt.Sprintf("%.1fs", time.Since(stepStart).Seconds()),
-			})
 		}
 
 	default:
@@ -136,10 +119,17 @@ func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates ma
 		status = "fail"
 	}
 
+	// 将步骤错误汇总到 Result.ErrorLog（供前端 stepStatus 展示）
+	errorLog := strings.Join(errLogs, "\n")
+	if len(errorLog) > 5000 {
+		errorLog = errorLog[:5000] + "...（已截断）"
+	}
+
 	return Result{
 		Status:   status,
 		Duration: fmt.Sprintf("%.1fs", duration.Seconds()),
 		Steps:    steps,
+		ErrorLog: errorLog,
 	}, nil
 }
 

@@ -36,6 +36,7 @@ type Step struct {
 	Name     string `json:"name"`
 	Status   string `json:"status"`
 	Duration string `json:"duration"`
+	ErrorLog string `json:"error_log,omitempty"`
 }
 
 // TestReport 表示测试执行的结构化报告。
