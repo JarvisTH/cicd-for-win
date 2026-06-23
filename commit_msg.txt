@@ -1,0 +1,1 @@
+docs: add rejected features section to design doc
