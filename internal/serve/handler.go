@@ -58,8 +58,13 @@ func initAuth(ciDir string) (*config.AuthConfig, error) {
 // 带有效 download token 的请求可绕过 Basic Auth（用于浏览器原生下载场景）。
 func basicAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 本地请求（127.0.0.1 / ::1）跳过 Basic Auth，供系统托盘使用
+		host := r.RemoteAddr
+		if strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// 一次性下载 token：浏览器原生下载（iframe/a 标签）无法携带 Authorization 头，
-		// 用 token 放行，token 一次性消费、60 秒过期。
 		if tk := r.URL.Query().Get("download_token"); tk != "" && validateDownloadToken(tk) {
 			next.ServeHTTP(w, r)
 			return
