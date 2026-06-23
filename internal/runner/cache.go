@@ -90,10 +90,16 @@ func getLatestModTime(projectPath string, projectType ProjectType) time.Time {
 	return maxTime
 }
 
+// NoCache 设为 true 时强制跳过所有缓存（由 CLI --no-cache 设置）
+var NoCache bool
+
 // cacheHit 检查缓存是否命中：缓存存在、状态为 pass、且源文件未变更。
 // ciDir 为缓存目录基路径；project 为项目名称（用于缓存 key）。
 // action 为 "check"/"build"/"test"；projectType 用于确定监视的文件。
 func cacheHit(ciDir, projectName, action string, projectType ProjectType, projectPath string) *BuildCache {
+	if NoCache {
+		return nil
+	}
 	cache := loadCache(ciDir, projectName, action)
 	if cache == nil {
 		return nil

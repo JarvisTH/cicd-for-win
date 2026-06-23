@@ -1,14 +1,10 @@
-ci.exe
-*.exe~
-.DS_Store
-Thumbs.db
-__pycache__/
-
-# 敏感文件 - 不提交到仓库
-.secretkey
-.known_hosts
-auth.json
-servers.json
-projects.json
-logs/
-reports/
+*.exe
+*.test.exe
+cov.out
+cov2.out
+serve.test
+runner.test
+commit_msg.txt
+*.cjs
+*.mjs
+*.ps1

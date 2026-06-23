@@ -1,0 +1,14 @@
+{
+  "project": "pair-backend",
+  "action": "test",
+  "status": "pass",
+  "duration": "1.4s",
+  "command": "powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action test -ProjectPath D:\\IDEA\\Project\\pair-backend -Json",
+  "report": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "raw_log": "[INFO] Scanning for projects...\r\n[INFO] \r\n[INFO] ----------------------\u003c com.pair:resume-backend \u003e-----------------------\r\n[INFO] Building Resume Backend 1.0.0\r\n[INFO] --------------------------------[ jar ]---------------------------------\r\n[INFO] ------------------------------------------------------------------------\r\n[INFO] BUILD FAILURE\r\n[INFO] ------------------------------------------------------------------------\r\n[INFO] Total time:  0.286 s\r\n[INFO] Finished at: 2026-06-22T22:00:39+08:00\r\n[INFO] ------------------------------------------------------------------------\r\n[WARNING] The requested profile \"jdk8\" could not be activated because it does not exist.\r\n[ERROR] Unknown lifecycle phase \".test.failure.ignore=true\". You must specify a valid lifecycle phase or a goal in the format \u003cplugin-prefix\u003e:\u003cgoal\u003e or \u003cplugin-group-id\u003e:\u003cplugin-artifact-id\u003e[:\u003cplugin-version\u003e]:\u003cgoal\u003e. Available lifecycle phases are: validate, initialize, generate-sources, process-sources, generate-resources, process-resources, compile, process-classes, generate-test-sources, process-test-sources, generate-test-resources, process-test-resources, test-compile, process-test-classes, test, prepare-package, package, pre-integration-test, integration-test, post-integration-test, verify, install, deploy, pre-clean, clean, post-clean, pre-site, site, post-site, site-deploy. -\u003e [Help 1]\r\n[ERROR] \r\n[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.\r\n[ERROR] Re-run Maven using the -X switch to enable full debug logging.\r\n[ERROR] \r\n[ERROR] For more information about the errors and possible solutions, please read the following articles:\r\n[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/LifecyclePhaseNotFoundException"
+  }
+}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"ci-cd/internal/cmd"
+	"ci-cd/internal/runner"
 )
 
 var rootCmd = &cobra.Command{
@@ -16,6 +17,7 @@ var rootCmd = &cobra.Command{
 
 func main() {
 	rootCmd.PersistentFlags().BoolVarP(&cmd.JsonOutput, "json", "j", false, "以 JSON 格式输出")
+	rootCmd.PersistentFlags().BoolVar(&runner.NoCache, "no-cache", false, "跳过构建缓存，强制重新执行")
 	rootCmd.AddCommand(
 		cmd.CmdCheck,
 		cmd.CmdTest,
@@ -36,6 +38,7 @@ func main() {
 		cmd.CmdLog,
 		cmd.CmdLocal,
 		cmd.CmdRules,
+		cmd.CmdWatch,
 	)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

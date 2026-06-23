@@ -1,0 +1,19 @@
+{"time":"2026-06-22 08:28:58","level":"info","message":"▶️ 开始流水线: pair (check → build → test → push → deploy)","source":"web"}
+{"time":"2026-06-22 08:28:58","level":"info","message":"⚙️ [pair] 检查: npx tsc --noEmit | npx eslint src/ | npx vue-tsc --noEmit | npx eslint -c rules/eslint-vue.mjs src/ | mvn compile -Xlint:all | mvn checkstyle:check -Dcheckstyle.config=rules/checkstyle.xml | mvn compile -Xlint:all","source":"web"}
+{"time":"2026-06-22 08:29:10","level":"info","message":"▶️ 开始流水线: pair-backend (check → build → test → push → deploy)","source":"web"}
+{"time":"2026-06-22 08:29:10","level":"info","message":"⚙️ [pair-backend] 检查: npx tsc --noEmit | npx eslint src/ | npx vue-tsc --noEmit | npx eslint -c rules/eslint-vue.mjs src/ | mvn compile -Xlint:all | mvn checkstyle:check -Dcheckstyle.config=rules/checkstyle.xml | mvn compile -Xlint:all","source":"web"}
+{"time":"2026-06-22 08:29:30","level":"info","message":"🔍 检测到 1 个 Git 远程仓库，点击「🔍 从 Git 检测」按钮导入","source":"web"}
+{"time":"2026-06-22 08:29:56","level":"info","message":"  🔧 命令: powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action check -ProjectPath D:\\IDEA\\Project\\pair-backend -Json","source":"web"}
+{"time":"2026-06-22 08:29:56","level":"info","message":"✅ [pair-backend] check 通过 (46.1s)","source":"web"}
+{"time":"2026-06-22 08:29:56","level":"info","message":"⚙️ [pair-backend] 构建: npm run build | mvn clean package -DskipTests | mvn clean install -DskipTests","source":"web"}
+{"time":"2026-06-22 08:30:20","level":"info","message":"  🔧 命令: powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action check -ProjectPath D:\\IDEA\\Project\\pair -Json","source":"web"}
+{"time":"2026-06-22 08:30:20","level":"info","message":"✅ [pair] check 通过 (82.2s)","source":"web"}
+{"time":"2026-06-22 08:30:20","level":"info","message":"⚙️ [pair] 构建: npm run build | mvn clean package -DskipTests | mvn clean install -DskipTests","source":"web"}
+{"time":"2026-06-22 08:30:33","level":"info","message":"  🔧 命令: powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action build -ProjectPath D:\\IDEA\\Project\\pair-backend -Json","source":"web"}
+{"time":"2026-06-22 08:30:33","level":"info","message":"✅ [pair-backend] build 通过 (36.8s)","source":"web"}
+{"time":"2026-06-22 08:30:33","level":"info","message":"⚙️ [pair-backend] 测试: npx vitest run --reporter=json | npx jest --json --coverage | mvn test -Dmaven.test.failure.ignore=true","source":"web"}
+{"time":"2026-06-22 08:30:35","level":"info","message":"  🔧 命令: powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action test -ProjectPath D:\\IDEA\\Project\\pair-backend -Json","source":"web"}
+{"time":"2026-06-22 08:30:35","level":"info","message":"✅ [pair-backend] test 通过 (2.7s)","source":"web"}
+{"time":"2026-06-22 08:30:35","level":"info","message":"⚙️ [pair-backend] 推送: git push --all","source":"web"}
+{"time":"2026-06-22 08:30:42","level":"info","message":"✅ [pair-backend] push 通过 (6.6s)","source":"web"}
+{"time":"2026-06-22 08:30:42","level":"info","message":"⚙️ [pair-backend] 部署: SFTP 上传 dist/ → $remote_dir/ | SFTP 上传 target/*.jar → $remote_dir/ | SFTP 上传各子模块 jar → $remote_dir/services/","source":"web"}

@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ===================== NewAuthConfig =====================
@@ -13,23 +16,21 @@ func TestNewAuthConfig(t *testing.T) {
 	if auth.Username != "admin" {
 		t.Errorf("用户名应为 admin, 得到 %q", auth.Username)
 	}
-	if auth.Salt == "" {
-		t.Error("Salt 不应为空")
-	}
 	if auth.Hash == "" {
 		t.Error("Hash 不应为空")
 	}
+	if !strings.HasPrefix(auth.Hash, "$2a$") {
+		t.Errorf("Hash 应为 bcrypt 格式, 得到 %q", auth.Hash)
+	}
 }
 
-func TestNewAuthConfig_SaltUniqueness(t *testing.T) {
-	auth1 := NewAuthConfig("user", "pass")
-	auth2 := NewAuthConfig("user", "pass")
-
-	if auth1.Salt == auth2.Salt {
-		t.Error("两次生成的 Salt 应该不同")
+func TestNewAuthConfig_PasswordVerifies(t *testing.T) {
+	auth := NewAuthConfig("user", "pass")
+	if !auth.VerifyPassword("pass") {
+		t.Error("正确密码应验证通过")
 	}
-	if auth1.Hash == auth2.Hash {
-		t.Error("不同 Salt 下相同密码的 Hash 应该不同")
+	if auth.VerifyPassword("wrong") {
+		t.Error("错误密码应验证失败")
 	}
 }
 
@@ -88,65 +89,38 @@ func TestVerifyPassword_CrossUser(t *testing.T) {
 
 // ===================== hashPassword =====================
 
-func TestHashPassword_Deterministic(t *testing.T) {
-	h1 := hashPassword("salt123", "mypassword")
-	h2 := hashPassword("salt123", "mypassword")
-	if h1 != h2 {
-		t.Error("相同 salt+password 应生成相同 hash")
+func TestHashPassword_NotEmpty(t *testing.T) {
+	hash := hashPassword("mypassword")
+	if hash == "" {
+		t.Fatal("hash 不应为空")
 	}
 }
 
-func TestHashPassword_Different(t *testing.T) {
-	h1 := hashPassword("salt1", "mypassword")
-	h2 := hashPassword("salt2", "mypassword")
-	if h1 == h2 {
-		t.Error("不同 salt 应生成不同 hash")
+func TestHashPassword_BcryptFormat(t *testing.T) {
+	hash := hashPassword("test-pass")
+	// bcrypt 哈希以 $2a$ 开头
+	if len(hash) < 20 || hash[:4] != "$2a$" {
+		t.Errorf("bcrypt 哈希格式不正确, 得到 %q", hash)
 	}
+}
 
-	h3 := hashPassword("salt1", "pass1")
-	h4 := hashPassword("salt1", "pass2")
-	if h3 == h4 {
+func TestHashPassword_DifferentPasswords(t *testing.T) {
+	h1 := hashPassword("pass1")
+	h2 := hashPassword("pass2")
+	if h1 == h2 {
 		t.Error("不同密码应生成不同 hash")
 	}
 }
 
-func TestHashPassword_Format(t *testing.T) {
-	hash := hashPassword("test-salt", "test-pass")
-	if len(hash) != 64 { // SHA256 hex = 64 字符
-		t.Errorf("SHA256 hex 应为 64 字符, 得到 %d: %q", len(hash), hash)
+func TestHashPassword_VerifyWorks(t *testing.T) {
+	hash := hashPassword("my-password")
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("my-password"))
+	if err != nil {
+		t.Error("验证正确密码应通过")
 	}
-	// 应为合法 hex 字符
-	for _, c := range hash {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Errorf("hash 包含非法字符: %c", c)
-		}
-	}
-}
-
-// ===================== generateSalt =====================
-
-func TestGenerateSalt_Format(t *testing.T) {
-	salt := generateSalt()
-	if salt == "" {
-		t.Fatal("salt 不应为空")
-	}
-	if salt == "default-salt-fallback" {
-		t.Error("不应触发 fallback")
-	}
-	// base64 编码的 16 字节应为 24 字符（含填充）
-	if len(salt) < 20 {
-		t.Errorf("salt 长度异常: %d", len(salt))
-	}
-}
-
-func TestGenerateSalt_Uniqueness(t *testing.T) {
-	seen := make(map[string]bool)
-	for i := 0; i < 50; i++ {
-		salt := generateSalt()
-		if seen[salt] {
-			t.Errorf("salt 重复: %q", salt)
-		}
-		seen[salt] = true
+	err = bcrypt.CompareHashAndPassword([]byte(hash), []byte("wrong-password"))
+	if err == nil {
+		t.Error("验证错误密码应失败")
 	}
 }
 

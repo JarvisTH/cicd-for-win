@@ -1,14 +1,14 @@
 package config
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -19,8 +19,9 @@ const (
 
 type AuthConfig struct {
 	Username string `json:"username"`
-	Salt     string `json:"salt"`
 	Hash     string `json:"hash"`
+	// Salt 保留用于向后兼容（旧 SHA256 格式），新生成的文件不再使用
+	Salt string `json:"salt,omitempty"`
 }
 
 // authFilePath 返回 auth.json 的完整路径
@@ -56,36 +57,41 @@ func SaveAuth(ciDir string, auth *AuthConfig) error {
 	return os.WriteFile(authFilePath(ciDir), data, 0644)
 }
 
-// NewAuthConfig 根据用户名和明文密码生成带盐的 AuthConfig
+// NewAuthConfig 根据用户名和明文密码生成 AuthConfig（使用 bcrypt 加密）
 func NewAuthConfig(username, password string) *AuthConfig {
-	salt := generateSalt()
-	hash := hashPassword(salt, password)
+	hash := hashPassword(password)
 	return &AuthConfig{
 		Username: username,
-		Salt:     salt,
 		Hash:     hash,
 	}
 }
 
-// VerifyPassword 验证明文密码是否匹配
+// VerifyPassword 验证明文密码是否匹配（支持 bcrypt 和旧版 SHA256）
 func (a *AuthConfig) VerifyPassword(password string) bool {
-	return a.Hash == hashPassword(a.Salt, password)
+	// 尝试 bcrypt 验证
+	if err := bcrypt.CompareHashAndPassword([]byte(a.Hash), []byte(password)); err == nil {
+		return true
+	}
+	// 向后兼容：旧版 SHA256(salt + password)
+	if a.Salt != "" {
+		return a.Hash == oldHashPassword(a.Salt, password)
+	}
+	return false
 }
 
-// hashPassword 使用 SHA256(salt + password) 计算密码哈希
-func hashPassword(salt, password string) string {
+// hashPassword 使用 bcrypt 计算密码哈希
+func hashPassword(password string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return password // 极端情况，保底
+	}
+	return string(hash)
+}
+
+// oldHashPassword 旧版 SHA256 哈希（向后兼容）
+func oldHashPassword(salt, password string) string {
 	h := sha256.New()
 	h.Write([]byte(salt))
 	h.Write([]byte(password))
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// generateSalt 生成 16 字节随机盐，返回 base64 编码
-func generateSalt() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// 极端情况：随机数生成失败，用固定值保底（理论上不会发生）
-		return "default-salt-fallback"
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }
