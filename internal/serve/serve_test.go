@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -19,14 +20,14 @@ func TestIsValidStepID(t *testing.T) {
 	validIDs := []string{"check", "build", "test", "push", "deploy"}
 	for _, id := range validIDs {
 		if !isValidStepID(id) {
-			t.Errorf("有效步骤 ID %q 应返回 true", id)
+			t.Errorf("valid step ID %q should be true", id)
 		}
 	}
 
 	invalidIDs := []string{"", "deploy2", "Check", "BUILD", "lint", "all"}
 	for _, id := range invalidIDs {
 		if isValidStepID(id) {
-			t.Errorf("无效步骤 ID %q 应返回 false", id)
+			t.Errorf("invalid step ID %q should be false", id)
 		}
 	}
 }
@@ -37,7 +38,7 @@ func TestStepStatusDir(t *testing.T) {
 	dir := stepStatusDir("/ci-cd")
 	expected := filepath.Join("/ci-cd", "status")
 	if dir != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, dir)
+		t.Errorf("expected %q, got %q", expected, dir)
 	}
 }
 
@@ -45,7 +46,7 @@ func TestStepStatusDirRelative(t *testing.T) {
 	dir := stepStatusDir(".")
 	expected := filepath.Join(".", "status")
 	if dir != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, dir)
+		t.Errorf("expected %q, got %q", expected, dir)
 	}
 }
 
@@ -55,7 +56,7 @@ func TestServersFilePath(t *testing.T) {
 	path := serversFilePath("/ci-cd")
 	expected := filepath.Join("/ci-cd", "servers.json")
 	if path != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, path)
+		t.Errorf("expected %q, got %q", expected, path)
 	}
 }
 
@@ -70,13 +71,13 @@ func TestSanitizeDeploy(t *testing.T) {
 	}
 	output := sanitizeDeploy(input)
 	if output["host"] != "example.com" {
-		t.Error("非密码字段应保留")
+		t.Error("non-password fields should be preserved")
 	}
 	if output["user"] != "admin" {
-		t.Error("非密码字段应保留")
+		t.Error("non-password fields should be preserved")
 	}
 	if pwd, ok := output["password"]; !ok || pwd != "" {
-		t.Errorf("密码字段应清空, 得到 %v", pwd)
+		t.Errorf("password field should be cleared, got %v", pwd)
 	}
 }
 
@@ -84,21 +85,21 @@ func TestSanitizeDeploy_NoPassword(t *testing.T) {
 	input := map[string]any{"host": "example.com"}
 	output := sanitizeDeploy(input)
 	if output["host"] != "example.com" {
-		t.Error("无密码字段时其余字段应保留")
+		t.Error("fields without password should be preserved")
 	}
 }
 
 func TestSanitizeDeploy_Empty(t *testing.T) {
 	output := sanitizeDeploy(map[string]any{})
 	if len(output) != 0 {
-		t.Errorf("空输入应返回空 map, 得到 %v", output)
+		t.Errorf("empty input should return empty map, got %v", output)
 	}
 }
 
 func TestSanitizeDeploy_Nil(t *testing.T) {
 	output := sanitizeDeploy(nil)
 	if len(output) != 0 {
-		t.Errorf("nil 输入应返回空 map, 得到 %v", output)
+		t.Errorf("nil input should return empty map, got %v", output)
 	}
 }
 
@@ -112,10 +113,10 @@ func TestSanitizeServer(t *testing.T) {
 	}
 	safe := sanitizeServer(s)
 	if safe.Password != "" {
-		t.Error("密码应被清空")
+		t.Error("password should be cleared")
 	}
 	if safe.Name != "test" {
-		t.Error("名称应保留")
+		t.Error("name should be preserved")
 	}
 }
 
@@ -123,7 +124,7 @@ func TestSanitizeServer_EmptyPassword(t *testing.T) {
 	s := StandaloneServer{Name: "test", Password: ""}
 	safe := sanitizeServer(s)
 	if safe.Password != "" {
-		t.Error("空密码应保持为空")
+		t.Error("empty password should stay empty")
 	}
 }
 
@@ -133,7 +134,7 @@ func TestBuildCommandString_Simple(t *testing.T) {
 	result := buildCommandString("cmd", []string{"arg1", "arg2"})
 	expected := "cmd arg1 arg2"
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -141,7 +142,7 @@ func TestBuildCommandString_MultipleArgs(t *testing.T) {
 	result := buildCommandString("cmd", []string{"a", "b", "c"})
 	expected := "cmd a b c"
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -149,13 +150,13 @@ func TestBuildCommandString_NoArgs(t *testing.T) {
 	result := buildCommandString("cmd", nil)
 	expected := "cmd"
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 
 	result = buildCommandString("cmd", []string{})
 	expected = "cmd"
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -163,7 +164,7 @@ func TestBuildCommandString_ArgWithSpaces(t *testing.T) {
 	result := buildCommandString("cmd", []string{"arg with spaces"})
 	expected := `cmd "arg with spaces"`
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -171,7 +172,7 @@ func TestBuildCommandString_ArgWithQuotes(t *testing.T) {
 	result := buildCommandString("cmd", []string{`say "hello"`})
 	expected := `cmd "say \"hello\""`
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -179,7 +180,7 @@ func TestBuildCommandString_ArgWithAmpersand(t *testing.T) {
 	result := buildCommandString("cmd", []string{"a&b"})
 	expected := `cmd "a&b"`
 	if result != expected {
-		t.Errorf("期望 %q, 得到 %q", expected, result)
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
@@ -189,17 +190,17 @@ func TestFileExists(t *testing.T) {
 	dir := t.TempDir()
 
 	if fileExists(filepath.Join(dir, "nonexistent.txt")) {
-		t.Error("不存在的文件应返回 false")
+		t.Error("non-existent file should return false")
 	}
 
 	path := filepath.Join(dir, "exists.txt")
 	os.WriteFile(path, []byte("content"), 0644)
 	if !fileExists(path) {
-		t.Error("存在的文件应返回 true")
+		t.Error("existing file should return true")
 	}
 
 	if !fileExists(dir) {
-		t.Error("存在的目录应返回 true")
+		t.Error("existing dir should return true")
 	}
 }
 
@@ -209,10 +210,10 @@ func TestLogFilePath(t *testing.T) {
 	path := logFilePath("/ci-cd")
 	today := time.Now().Format("2006-01-02")
 	if !strings.Contains(path, today) {
-		t.Errorf("日志路径应包含今天日期 %s, 得到 %s", today, path)
+		t.Errorf("log path should contain today's date %s, got %s", today, path)
 	}
 	if !strings.HasSuffix(path, ".log") {
-		t.Errorf("日志路径应以 .log 结尾, 得到 %s", path)
+		t.Errorf("log path should end with .log, got %s", path)
 	}
 }
 
@@ -224,16 +225,16 @@ func TestRespondJSON(t *testing.T) {
 
 	resp := w.Result()
 	if resp.StatusCode != 200 {
-		t.Errorf("状态码应为 200, 得到 %d", resp.StatusCode)
+		t.Errorf("status should be 200, got %d", resp.StatusCode)
 	}
 	if resp.Header.Get("Content-Type") != "application/json" {
-		t.Errorf("Content-Type 应为 application/json")
+		t.Errorf("Content-Type should be application/json")
 	}
 
 	var body map[string]string
 	json.NewDecoder(resp.Body).Decode(&body)
 	if body["status"] != "ok" {
-		t.Errorf("body.status 应为 ok, 得到 %s", body["status"])
+		t.Errorf("body.status should be ok, got %s", body["status"])
 	}
 }
 
@@ -243,7 +244,7 @@ func TestRespondJSON_Error(t *testing.T) {
 
 	resp := w.Result()
 	if resp.StatusCode != 400 {
-		t.Errorf("状态码应为 400, 得到 %d", resp.StatusCode)
+		t.Errorf("status should be 400, got %d", resp.StatusCode)
 	}
 }
 
@@ -255,24 +256,24 @@ func TestRespondError(t *testing.T) {
 
 	resp := w.Result()
 	if resp.StatusCode != 403 {
-		t.Errorf("状态码应为 403, 得到 %d", resp.StatusCode)
+		t.Errorf("status should be 403, got %d", resp.StatusCode)
 	}
 	if resp.Header.Get("Content-Type") != "application/json" {
-		t.Errorf("Content-Type 应为 application/json")
+		t.Errorf("Content-Type should be application/json")
 	}
 
 	var body map[string]string
 	json.NewDecoder(resp.Body).Decode(&body)
 	if body["error"] != "forbidden" {
-		t.Errorf("body.error 应为 forbidden, 得到 %s", body["error"])
+		t.Errorf("body.error should be forbidden, got %s", body["error"])
 	}
 }
 
 // ===================== findCiDir =====================
 
 func TestFindCiDir_NotFound(t *testing.T) {
-	// findCiDir 依赖 os.Executable()，无法在测试中直接 mock
-	// 这里只验证它不会 panic
+	// findCiDir depends on os.Executable(), cannot mock in unit test
+	// Just verify it doesn't panic
 }
 
 // ===================== validateAndEncryptDeploy =====================
@@ -281,7 +282,7 @@ func TestValidateAndEncryptDeploy_NoHost(t *testing.T) {
 	d := &config.DeployConfig{Host: ""}
 	err := validateAndEncryptDeploy(t.TempDir(), d)
 	if err != nil {
-		t.Errorf("空 Host 应跳过: %v", err)
+		t.Errorf("empty Host should skip: %v", err)
 	}
 }
 
@@ -292,7 +293,7 @@ func TestValidateAndEncryptDeploy_InvalidAuthType(t *testing.T) {
 	}
 	err := validateAndEncryptDeploy(t.TempDir(), d)
 	if err == nil {
-		t.Fatal("非法认证类型应报错")
+		t.Fatal("invalid auth type should error")
 	}
 }
 
@@ -305,7 +306,7 @@ func TestValidateAndEncryptDeploy_ValidAuthTypes(t *testing.T) {
 		}
 		err := validateAndEncryptDeploy(t.TempDir(), d)
 		if err != nil {
-			t.Errorf("合法认证类型 %q 不应报错: %v", authType, err)
+			t.Errorf("valid auth type %q should not error: %v", authType, err)
 		}
 	}
 }
@@ -318,13 +319,13 @@ func TestValidateAndEncryptDeploy_InvalidPort(t *testing.T) {
 	}
 	err := validateAndEncryptDeploy(t.TempDir(), d)
 	if err == nil {
-		t.Fatal("负端口应报错")
+		t.Fatal("negative port should error")
 	}
 
 	d.Port = 99999
 	err = validateAndEncryptDeploy(t.TempDir(), d)
 	if err == nil {
-		t.Fatal("大于 65535 的端口应报错")
+		t.Fatal("port > 65535 should error")
 	}
 }
 
@@ -337,7 +338,7 @@ func TestValidateAndEncryptDeploy_ValidPort(t *testing.T) {
 		}
 		err := validateAndEncryptDeploy(t.TempDir(), d)
 		if err != nil {
-			t.Errorf("有效端口 %d 不应报错: %v", port, err)
+			t.Errorf("valid port %d should not error: %v", port, err)
 		}
 	}
 }
@@ -353,13 +354,13 @@ func TestValidateAndEncryptDeploy_EncryptsPlaintextPassword(t *testing.T) {
 	}
 	err := validateAndEncryptDeploy(dir, d)
 	if err != nil {
-		t.Fatalf("加密失败: %v", err)
+		t.Fatalf("encrypt failed: %v", err)
 	}
 	if d.Password == "my-plain-password" {
-		t.Error("明文密码应被加密")
+		t.Error("plaintext password should be encrypted")
 	}
 	if !strings.HasPrefix(d.Password, "enc:") {
-		t.Errorf("加密后应以 enc: 开头, 得到 %s", d.Password)
+		t.Errorf("encrypted password should start with enc:, got %s", d.Password)
 	}
 }
 
@@ -373,10 +374,10 @@ func TestValidateAndEncryptDeploy_AlreadyEncrypted(t *testing.T) {
 	}
 	err := validateAndEncryptDeploy(dir, d)
 	if err != nil {
-		t.Fatalf("已加密密码不应报错: %v", err)
+		t.Fatalf("already encrypted should not error: %v", err)
 	}
 	if d.Password != "enc:abc123" {
-		t.Errorf("已加密密码应保持不变, 得到 %s", d.Password)
+		t.Errorf("already encrypted password should stay unchanged, got %s", d.Password)
 	}
 }
 
@@ -389,7 +390,7 @@ func TestValidateAndEncryptDeploy_EmptyPassword(t *testing.T) {
 	}
 	err := validateAndEncryptDeploy(t.TempDir(), d)
 	if err != nil {
-		t.Errorf("空密码不应报错: %v", err)
+		t.Errorf("empty password should not error: %v", err)
 	}
 }
 
@@ -403,14 +404,14 @@ func TestSaveStepStatus(t *testing.T) {
 
 	statuses := loadStepStatuses(dir)
 	if len(statuses) != 1 {
-		t.Fatalf("应有 1 个项目, 得到 %d", len(statuses))
+		t.Fatalf("expected 1 project, got %d", len(statuses))
 	}
 	steps := statuses["proj"]
 	if len(steps) != 1 {
-		t.Fatalf("应有 1 个步骤, 得到 %d", len(steps))
+		t.Fatalf("expected 1 step, got %d", len(steps))
 	}
 	if steps["check"].Status != "pass" {
-		t.Errorf("状态应为 pass, 得到 %s", steps["check"].Status)
+		t.Errorf("status should be pass, got %s", steps["check"].Status)
 	}
 }
 
@@ -419,7 +420,7 @@ func TestSaveStepStatus_EmptyProject(t *testing.T) {
 	saveStepStatus(dir, runner.Result{Project: "", Action: "test", Status: "pass"})
 	statuses := loadStepStatuses(dir)
 	if len(statuses) != 0 {
-		t.Errorf("空项目名不应保存状态, 得到 %v", statuses)
+		t.Errorf("empty project name should not save status, got %v", statuses)
 	}
 }
 
@@ -431,16 +432,16 @@ func TestLoadStepStatuses(t *testing.T) {
 
 	statuses := loadStepStatuses(dir)
 	if len(statuses) != 2 {
-		t.Fatalf("应有 2 个项目, 得到 %d", len(statuses))
+		t.Fatalf("expected 2 projects, got %d", len(statuses))
 	}
 	if len(statuses["p1"]) != 2 {
-		t.Errorf("p1 应有 2 个步骤, 得到 %d", len(statuses["p1"]))
+		t.Errorf("p1 should have 2 steps, got %d", len(statuses["p1"]))
 	}
 	if statuses["p1"]["build"].Status != "fail" {
-		t.Errorf("p1 build 状态应为 fail, 得到 %s", statuses["p1"]["build"].Status)
+		t.Errorf("p1 build status should be fail, got %s", statuses["p1"]["build"].Status)
 	}
 	if statuses["p1"]["build"].ErrorLog != "build err" {
-		t.Errorf("p1 build ErrorLog 应保留, 得到 %s", statuses["p1"]["build"].ErrorLog)
+		t.Errorf("p1 build ErrorLog should be preserved, got %s", statuses["p1"]["build"].ErrorLog)
 	}
 }
 
@@ -448,7 +449,7 @@ func TestLoadStepStatuses_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	statuses := loadStepStatuses(dir)
 	if len(statuses) != 0 {
-		t.Errorf("空目录应返回空 map, 得到 %v", statuses)
+		t.Errorf("empty dir should return empty map, got %v", statuses)
 	}
 }
 
@@ -462,14 +463,14 @@ func TestLoadStepStatuses_SkipsNonJSON(t *testing.T) {
 
 	statuses := loadStepStatuses(dir)
 	if len(statuses) != 1 {
-		t.Fatalf("应有 1 个项目, 得到 %d", len(statuses))
+		t.Fatalf("expected 1 project, got %d", len(statuses))
 	}
 	steps := statuses["proj"]
 	if len(steps) != 1 {
-		t.Fatalf("应有 1 个步骤（跳过 .txt）, 得到 %d", len(steps))
+		t.Fatalf("expected 1 step (skip .txt), got %d", len(steps))
 	}
 	if _, ok := steps["check"]; !ok {
-		t.Error("check 步骤应存在")
+		t.Error("check step should exist")
 	}
 }
 
@@ -481,6 +482,118 @@ func TestLoadStepStatuses_InvalidJSON(t *testing.T) {
 
 	statuses := loadStepStatuses(dir)
 	if len(statuses) > 0 {
-		t.Errorf("无效 JSON 应被跳过, 得到 %v", statuses)
+		t.Errorf("invalid JSON should be skipped, got %v", statuses)
+	}
+}
+
+// ===================== checkLoginRateLimit =====================
+
+func TestCheckLoginRateLimit_FirstAttempt(t *testing.T) {
+	if !checkLoginRateLimit("10.0.0.1") {
+		t.Error("first attempt should pass")
+	}
+}
+
+func TestCheckLoginRateLimit_UnderLimit(t *testing.T) {
+	ip := "10.0.0.2"
+	for i := 0; i < 4; i++ {
+		if !checkLoginRateLimit(ip) {
+			t.Errorf("attempt %d should pass", i+1)
+		}
+	}
+}
+
+// ===================== generateDownloadToken / validateDownloadToken =====================
+
+func TestGenerateDownloadToken_Valid(t *testing.T) {
+	token := generateDownloadToken()
+	if token == "" {
+		t.Fatal("token should not be empty")
+	}
+	if !validateDownloadToken(token) {
+		t.Error("newly generated token should be valid")
+	}
+	if validateDownloadToken(token) {
+		t.Error("one-time token should be invalid on second use")
+	}
+}
+
+func TestValidateDownloadToken_Empty(t *testing.T) {
+	if validateDownloadToken("") {
+		t.Error("empty token should be invalid")
+	}
+}
+
+func TestValidateDownloadToken_Unknown(t *testing.T) {
+	if validateDownloadToken("unknown-token") {
+		t.Error("unknown token should be invalid")
+	}
+}
+
+// ===================== saveTestReportToDisk =====================
+
+func TestSaveTestReportToDisk(t *testing.T) {
+	dir := t.TempDir()
+	saveTestReportToDisk(dir, runner.Result{
+		Project: "test-proj",
+		Status:  "pass",
+		Report: &runner.TestReport{
+			Total: 10, Passed: 10, Failed: 0,
+		},
+	})
+
+	reportsDir := filepath.Join(dir, "reports", "test-proj")
+	entries, err := os.ReadDir(reportsDir)
+	if err != nil {
+		t.Fatalf("report dir should exist: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("should have at least one report file")
+	}
+}
+
+// ===================== cleanupOldLogs =====================
+
+func TestCleanupOldLogs(t *testing.T) {
+	logDir := t.TempDir()
+	oldPath := filepath.Join(logDir, "2026-05-01.log")
+	os.WriteFile(oldPath, []byte("old log"), 0644)
+	oldTime := time.Now().Add(-31 * 24 * time.Hour)
+	os.Chtimes(oldPath, oldTime, oldTime)
+
+	newPath := filepath.Join(logDir, "2026-06-23.log")
+	os.WriteFile(newPath, []byte("new log"), 0644)
+
+	cleanupOldLogs(logDir)
+
+	if _, err := os.Stat(oldPath); err == nil {
+		t.Error("logs older than 30 days should be cleaned")
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Error("logs within 30 days should be kept")
+	}
+}
+
+func TestCleanupOldLogs_EmptyDir(t *testing.T) {
+	cleanupOldLogs(t.TempDir())
+}
+
+// ===================== handleViewRuleFile =====================
+
+func TestHandleViewRuleFile_Security(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/rules?file=../../etc/passwd", nil)
+	handleViewRuleFile(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("path traversal should return 400, got %d", w.Code)
+	}
+}
+
+func TestHandleViewRuleFile_EmptyFile(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/rules", nil)
+	handleViewRuleFile(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing file param should return 400, got %d", w.Code)
 	}
 }

@@ -1,1 +1,1 @@
-{"project":"pair-backend","action":"check","status":"pass","duration":"45.8s","command":"powershell.exe -ExecutionPolicy Bypass -File D:\\IDEA\\Project\\ci-cd\\ci-runner.ps1 -Action check -ProjectPath D:\\IDEA\\Project\\pair-backend -Json"}
+{"project":"pair-backend","action":"check","status":"pass","duration":"48.3s","command":"check","steps":[{"name":"compile","status":"pass","duration":"0.0s"},{"name":"checkstyle","status":"pass","duration":"0.0s"}]}

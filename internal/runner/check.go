@@ -119,8 +119,14 @@ func RunCheckInternal(projectPath string, projectType ProjectType, ruleStates ma
 		status = "fail"
 	}
 
-	// 将步骤错误汇总到 Result.ErrorLog（供前端 stepStatus 展示）
-	errorLog := strings.Join(errLogs, "\n")
+	// 从已完成的 steps 中提取错误日志（确保与 Step.ErrorLog 一致，支持 stdout/stderr fallback）
+	var errorLogParts []string
+	for _, s := range steps {
+		if s.ErrorLog != "" {
+			errorLogParts = append(errorLogParts, s.Name+": "+s.ErrorLog)
+		}
+	}
+	errorLog := strings.Join(errorLogParts, "\n")
 	if len(errorLog) > 5000 {
 		errorLog = errorLog[:5000] + "...（已截断）"
 	}
