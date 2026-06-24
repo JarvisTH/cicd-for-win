@@ -1,1 +1,0 @@
-{"project":"pair-backend","action":"deploy","status":"fail","duration":"","error_log":"创建远程文件 /opt/pair-backend/resume-backend-1.0.0.jar 失败: file does not exist"}

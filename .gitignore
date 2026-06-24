@@ -21,6 +21,8 @@ status/
 cache/
 reports/
 logs/
+internal/runner/cache/
+internal/runner/reports/
 
 # IDE
 .idea/
