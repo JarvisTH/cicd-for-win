@@ -24,6 +24,9 @@ logs/
 internal/runner/cache/
 internal/runner/reports/
 
+# 调试日志
+tray_debug.log
+
 # IDE
 .idea/
 .vscode/
