@@ -28,6 +28,7 @@ func saveStepStatus(ciDir string, result runner.Result) {
 
 type stepStatusFile struct {
 	Status   string `json:"status"`
+	Duration string `json:"duration,omitempty"`
 	ErrorLog string `json:"error_log,omitempty"`
 }
 

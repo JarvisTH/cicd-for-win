@@ -18,18 +18,21 @@ async function refreshProjects() {
   try {
     const stData = await api('/api/steps/status');
     if (stData && stData.statuses) {
-      if (!window._stepStatus) window._stepStatus = {};
+      // 完整重建，以服务端为准
+      const newStatus = {};
+      const newErrors = {};
       for (const [proj, steps] of Object.entries(stData.statuses)) {
         for (const [stepId, info] of Object.entries(steps)) {
-          if (info.status === 'pass' || info.status === 'fail') {
-            window._stepStatus[proj + ':' + stepId] = info.status;
+          if (info.status === 'pass' || info.status === 'fail' || info.status === 'running') {
+            newStatus[proj + ':' + stepId] = info.status;
             if (info.status === 'fail') {
-              if (!window._stepErrors) window._stepErrors = {};
-              window._stepErrors[proj + ':' + stepId] = { error_log: info.error_log || '', error: '' };
+              newErrors[proj + ':' + stepId] = { error_log: info.error_log || '', error: '' };
             }
           }
         }
       }
+      window._stepStatus = newStatus;
+      window._stepErrors = newErrors;
     }
   } catch(e) {}
   document.getElementById('welcomeCard').style.display = projects.length === 0 ? 'block' : 'none';

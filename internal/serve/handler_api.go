@@ -47,9 +47,18 @@ func apiHandler(action string) http.HandlerFunc {
 		// 处理自定义命令
 		customCommand, customArgs := findPipelineStepCommand(ciDir, projectName, action)
 		if customCommand != "" {
+			// 重置当前及下游步骤状态为 pending
+			resetDownstreamSteps(ciDir, projectName, action)
+			// 先写入 running 状态，让前端轮询能实时看到执行中
+			saveStepStatus(ciDir, runner.Result{Project: projectName, Action: action, Status: "running"})
 			runCustomCommand(w, proj, action, customCommand, customArgs)
 			return
 		}
+
+		// 重置当前及下游步骤状态为 pending
+		resetDownstreamSteps(ciDir, projectName, action)
+		// 先写入 running 状态，让前端轮询能实时看到执行中
+		saveStepStatus(ciDir, runner.Result{Project: projectName, Action: action, Status: "running"})
 
 		var result runner.Result
 		var runErr error

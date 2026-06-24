@@ -172,7 +172,14 @@ func NewHandler(ciDir string) http.Handler {
 	mux.HandleFunc("/api/remote/disconnect", handleRemoteDisconnect)
 
 	subFS, _ := fs.Sub(webFiles, "web")
-	mux.Handle("/", http.FileServer(http.FS(subFS)))
+	fileServer := http.FileServer(http.FS(subFS))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 禁用浏览器缓存，确保每次加载最新的前端代码
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		fileServer.ServeHTTP(w, r)
+	}))
 	return basicAuth(csrfProtect(mux))
 }
 

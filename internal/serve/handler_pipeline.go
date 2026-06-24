@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,28 @@ import (
 	"ci-cd/internal/config"
 	"ci-cd/internal/runner"
 )
+
+// resetDownstreamSteps 重置指定步骤及其后续步骤的状态（删除状态文件，使其回到 pending）。
+// 与前端 runAction 的重置逻辑保持一致。
+func resetDownstreamSteps(ciDir, projectName, currentStep string) {
+	defaultOrder := []string{"check", "build", "test", "push", "deploy"}
+	idx := -1
+	for i, s := range defaultOrder {
+		if s == currentStep {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+	// 删除当前步骤及之后所有步骤的状态文件
+	for i := idx; i < len(defaultOrder); i++ {
+		step := defaultOrder[i]
+		path := filepath.Join(stepStatusDir(ciDir), projectName, step+".json")
+		os.Remove(path)
+	}
+}
 
 // getProjectEnabledSteps 返回项目启用的流水线步骤 ID 列表（保持配置顺序）。
 // 无自定义流水线时返回默认顺序 [check, build, test, push, deploy]。
@@ -160,6 +183,10 @@ func pipelineRunHandler(w http.ResponseWriter, r *http.Request) {
 	failed := false
 
 	for _, step := range steps {
+		// 先写入 running 状态，让前端轮询能实时看到执行中
+		saveStepStatus(ciDir, runner.Result{
+			Project: proj.Name, Action: step, Status: "running",
+		})
 		result, err := runPipelineStep(proj, ciDir, step)
 		results = append(results, result)
 		if err != nil || result.Status == "fail" {
@@ -207,6 +234,10 @@ func pipelineRunAllHandler(w http.ResponseWriter, r *http.Request) {
 		steps := getProjectEnabledSteps(proj)
 		results := []runner.Result{}
 		for _, step := range steps {
+			// 先写入 running 状态，让前端轮询能实时看到执行中
+			saveStepStatus(ciDir, runner.Result{
+				Project: proj.Name, Action: step, Status: "running",
+			})
 			result, err := runPipelineStep(proj, ciDir, step)
 			results = append(results, result)
 			if err != nil || result.Status == "fail" {

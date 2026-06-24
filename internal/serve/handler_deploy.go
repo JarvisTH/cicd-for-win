@@ -29,6 +29,11 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	proj.CiDir = ciDir
 
+	// 重置 push 及下游步骤状态为 pending
+	resetDownstreamSteps(ciDir, projectName, "push")
+	// 先写入 running 状态，让前端轮询能实时看到执行中
+	saveStepStatus(ciDir, runner.Result{Project: projectName, Action: "push", Status: "running"})
+
 	err := runner.RunPushInternal(*proj)
 	if err == nil {
 		saveStepStatus(ciDir, runner.Result{
@@ -108,6 +113,11 @@ func deployHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proj.CiDir = ciDir
+
+	// 重置 deploy 及下游步骤状态为 pending
+	resetDownstreamSteps(ciDir, projectName, "deploy")
+	// 先写入 running 状态，让前端轮询能实时看到执行中
+	saveStepStatus(ciDir, runner.Result{Project: projectName, Action: "deploy", Status: "running"})
 
 	var result runner.Result
 	var err error
